@@ -16,29 +16,18 @@
 //full program
 double delta = 1, emitterCoeff = 1;
 int numOfLeaks = 2, iterations = 50;
+char inputFile[50] = "hanoi-1.inp";
+char reportFile[50] = "hanoi.rpt";
 char directoryString[50] = "L1_LP/Current";
 
 int totalNodeCount;
 int *leakNodes;
 double totalDemand;
-//double baseCasePressureMatrix[31], observedPressure[31], pressureMatrix[31][2], 
-	//largePressureMatrix[31][31], coefficients[62], A[31][2], 
-	//largeA[31][31], Ahat[62][62], b[31], bhat[62], I[31][31], 
-	//realLeakValues[31], singleRunErrors[31], totalDemand;
 double *baseCasePressureMatrix, *observedPressure, *coefficients, *b, *bhat,
 	*realLeakValues, *singleRunErrors, *leakDemands, *leakMagnitudes, 
 	*modelError, **largePressureMatrix, **largeA, **Ahat,  **I, 
 	*objectiveValues; 
 	
-int       error = 0;
-double    sol[62];
-int       ind[62];
-double    val[62];
-double    obj[62];
-char      vtype[62];	
-int       optimstatus;
-double    objval;
-
 FILE *ptr_file;
 
 void initializeArrays();
@@ -49,8 +38,8 @@ void analyzeBaseCase(int);
 void oneLeak(int, double, int, int);
 void nLeaks(int, int);
 double calculateError(int, double[]);
-int writeSummaryFile(int);
-int writeRawResults(int);
+int writeSummaryFile(int, int, double, double[]);
+int writeRawResults(int, int, double[]);
 int writeLeakFile(int);
 int writeErrorFile();
 
@@ -69,12 +58,21 @@ int main(int argc, char *argv[])
 	errorSum = 0.0;
 	
 	//Open EPANET & Input file
-	ENopen("hanoi-1.inp","hanoi.rpt","");
+	ENopen(inputFile,reportFile,"");
 	
 	// Get the number of nodes
 	ENgetcount(EN_NODECOUNT, &numNodes);
 	ENgetcount(EN_TANKCOUNT, &storage);
 	totalNodeCount = numNodes - storage;
+	
+	int       error = 0;
+	double    sol[(totalNodeCount * 2)];
+	int       ind[(totalNodeCount * 2)];
+	double    val[(totalNodeCount * 2)];
+	double    obj[(totalNodeCount * 2)];
+	char      vtype[(totalNodeCount * 2)];	
+	int       optimstatus;
+	double    objval;
 	
 	baseCasePressureMatrix = (double *) calloc(totalNodeCount, sizeof(double));
 	observedPressure = (double *) calloc(totalNodeCount, sizeof(double));
@@ -161,10 +159,10 @@ int main(int argc, char *argv[])
 		if (error) goto QUIT;
 		
 		// Write model to 'L1Approx.lp'		
-		error = GRBwrite(model, "L1Approx.lp");
+		error = GRBwrite(model, "L1_LP.lp");
 		if (error) goto QUIT;
 		
-		error = GRBwrite(model, "L1Approx.sol");
+		error = GRBwrite(model, "L1_LP.sol");
 		if (error) goto QUIT;
 		
 		// Capture solution information		
@@ -182,10 +180,10 @@ int main(int argc, char *argv[])
 		if (optimstatus == GRB_OPTIMAL)
 		{
 			printf("Optimal objective: %.4e\n", objval);
-			for(i = 0; i < (totalNodeCount * 2); i++)
-			{		  	
+			//for(i = 0; i < (totalNodeCount * 2); i++)
+			//{		  	
 				//printf("  sol[%d] = %f \n", (i+1), sol[i]);
-			}
+			//}
 		} else if (optimstatus == GRB_INF_OR_UNBD) 
 		{
 			printf("Model is infeasible or unbounded\n");
@@ -197,8 +195,8 @@ int main(int argc, char *argv[])
 		objectiveValues[k] = objval;
 		modelError[k] = calculateError(totalNodeCount, sol);		
 		
-		writeSummaryFile(k);
-		writeRawResults(k);
+		writeSummaryFile(k, optimstatus, objval, sol);
+		writeRawResults(k, optimstatus, sol);
 		writeLeakFile(k);
 		
 		/* Free model */
@@ -280,18 +278,12 @@ void initializeArrays()
 	{
 		bhat[i] = 0;		
 	}
+	
 	for (i = 0; i < (totalNodeCount * 2); i++)
 	{
 		coefficients[i] = 0;		
 	}
-	//for (i = 0; i < totalNodeCount; i++)
-	//{
-	//	for (j = 0; j < 2; j++)
-	//	{
-	//		pressureMatrix[i][j] = 0;
-	//		A[i][j] = 0;
-	//	}
-	//}
+	
 	for (i = 0; i < totalNodeCount; i++)
 	{
 		for (j = 0; j < totalNodeCount; j++)
@@ -300,6 +292,7 @@ void initializeArrays()
 			largeA[i][j] = 0;		
 		}
 	}
+	
 	for (i = 0; i < (totalNodeCount * 2); i++)
 	{
 		for (j = 0; j < (totalNodeCount * 2); j++)
@@ -307,6 +300,7 @@ void initializeArrays()
 			Ahat[i][j] = 0;		
 		}
 	}
+	
 	for (i = 0; i < totalNodeCount; i++)
 	{
 		for (j = 0; j < totalNodeCount; j++)
@@ -329,8 +323,7 @@ void initializeArrays()
 	for (i = 0; i < totalNodeCount; i++)
 	{
 		coefficients[i] = 0.0;
-	}
-	
+	}	
 	for (i = totalNodeCount; i < (totalNodeCount * 2); i++)
 	{
 		coefficients[i] = 1.0;
@@ -479,13 +472,7 @@ void randomizeLeaks(double emitterCoeff, int numNodes, int numOfLeaks)
 		{
 			leakMagnitudes[i] = drand48() * 10;
 		}		
-		/*
-		for(i = 0; i < numOfLeaks; i++)
-		{
-			printf("Node: %d \t ", leakNodes[i]);
-		}
-		printf("\n\n");
-		*/
+
 }
 
 
@@ -667,7 +654,7 @@ double calculateError(int numNodes, double solution[])
 
 //FUNCTION
 //Create an output file for each simulation/optimization run
-int writeSummaryFile(int k)
+int writeSummaryFile(int k, int optimstatus, double objval, double sol[])
 {	
 	char sequentialFile[100], buffer[10], name[10];
 	int i; 
@@ -727,7 +714,7 @@ int writeSummaryFile(int k)
 
 //FUNCTION
 //Create an output file for each simulation/optimization run
-int writeRawResults(int k)
+int writeRawResults(int k, int optimstatus, double sol[])
 {	
 	char sequentialFile[100], buffer[10];
 	int i; 
@@ -803,45 +790,6 @@ int writeErrorFile()
 	fclose(ptr_file);
 	return 0;
 }
-
-/*
-//FUNCTION
-//Create an output file for each set of iterations
-int writeErrorFile()
-{	
-	char sequentialFile[100], buffer[10];
-	int i; 
-	
-	i = 0;	
-	
-	//Create summary CSV file for each set of leaks
-	sequentialFile[0] = '\0';
-	
-	
-	
-	strcat(sequentialFile, "/home/andrew/Documents/Research/C/L1/LP_Solutions/Error/Error_");
-	strcat(sequentialFile, "_C_");
-	sprintf(buffer,"%2.2f",emitterCoeff);
-	strcat(sequentialFile, buffer);
-	strcat(sequentialFile, "_delta_");
-	sprintf(buffer,"%2.2f",delta);
-	strcat(sequentialFile, buffer);			
-	strcat(sequentialFile, ".csv");
-	
-	ptr_file = fopen(sequentialFile, "w");
-	if (!ptr_file)
-		return 1;
-	
-	for (i = 0; i < iterations; i++)
-	{
-		fprintf(ptr_file, "Run %d:, Abs Error:, %f\n", i, modelError[i]);										
-	}
-	
-	fclose(ptr_file);
-	return 0;
-}
-*/
-
 
 //FUNCTION
 //Print the location and magnitude of leaks to file

@@ -15,3 +15,12 @@
 *.exe
 *.out
 *.app
+
+# Gurobi LP and Log files
+*.lp
+*.sol
+*.log
+
+# EPANET input and report files
+*.inp
+*.rpt
