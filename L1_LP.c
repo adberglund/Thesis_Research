@@ -3,6 +3,7 @@
 #include <string.h>
 #include <time.h>
 #include <math.h>
+#include <sys/stat.h>
 #include "epanet2.h" 
 #include "gurobi_c.h"
 
@@ -15,10 +16,10 @@
 //Changing delta, emitterCoeff, iterations and numOfLeaks manipulates the 
 //full program
 double delta = 1, emitterCoeff = 1;
-int numOfLeaks = 2, iterations = 50;
+int numOfLeaks = 2, iterations = 3;
 char inputFile[50] = "hanoi-1.inp";
 char reportFile[50] = "hanoi.rpt";
-char directoryString[50] = "L1_LP/Current";
+char directoryString[50] = "L1_LP/";
 
 int totalNodeCount;
 int *leakNodes;
@@ -42,6 +43,7 @@ int writeSummaryFile(int, int, double, double[]);
 int writeRawResults(int, int, double[]);
 int writeLeakFile(int);
 int writeErrorFile();
+char * setOutputDirectory();
 
 int main(int argc, char *argv[]) 
 {
@@ -49,6 +51,7 @@ int main(int argc, char *argv[])
 	GRBmodel *model = NULL;	
 	int  i, j, k, numNodes, storage;
 	double errorSum;
+	char * dirName;
 	
 	//Randomize the leak locations, commented out will use the same seeding 
 	//for each run
@@ -107,6 +110,8 @@ int main(int argc, char *argv[])
  	error = GRBloadenv(&env, "L1_LP.log");
  	if (error) goto QUIT;
 		
+ 	dirName = setOutputDirectory();
+ 	
 	//Create observation	
 	for (k = 0; k < iterations; k++)
 	{		
@@ -827,4 +832,35 @@ int writeLeakFile(int k)
 	
 	fclose(ptr_file);
 	return 0;	
+}
+
+char * setOutputDirectory()
+{
+	int status;
+	char dirName[100], date[50];
+	
+	time_t seconds;
+	struct tm *time_struct;
+	
+	time(&seconds);
+	time_struct = localtime(&seconds);
+	
+	//Create summary CSV file for each set of leaks
+	dirName[0] = '\0';
+	strcat(dirName, "/home/andrew/Ubuntu One/Research/Thesis_Results/");
+	strcat(dirName, directoryString);
+	strftime(date, 50, "%Y_%m_%d", time_struct);
+	strcat(dirName, date);
+	status = mkdir(dirName, S_IRWXU | S_IRWXG | S_IRWXO);
+	
+	if (status != 0)
+	{
+		printf("/nDirectory Creation Error/n");
+	}
+	
+	//strftime(date, 50, "%Y_%m_%d", time_struct);
+	
+	//printf("Current date: %s\n\n", date);
+	
+	return dirName;
 }
