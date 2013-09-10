@@ -3,23 +3,29 @@
 #include <string.h>
 #include <time.h>
 #include <math.h>
+#include <sys/stat.h>
 #include "epanet2.h" 
 #include "gurobi_c.h"
 
-//September 06, 2013
-//L1-Approximation LP for leak detection in a water distribution network 
-//using EPANET, and Gurobi Optimizer
-//
-//
+//September 10, 2013
+//L1-Approximation (L1 calculates absolute error, in this case, between
+//	simulated and "observed" scenarios and is being used for linear 
+//	approximation of water distrubition network operations) using EPANET
+//	and Guribo Optimizer
 
-//Changing delta, emitterCoeff, iterations and numOfLeaks manipulates the 
-//full program
-double delta = 1, emitterCoeff = 1, binaryLeakLimit = 2.0;
-int numOfLeaks = 2, iterations = 50;
+//The // bracketed variables currently serve as the adjustable parameters
+//	for number of leaks and number of simulations  
+//
+//
+double delta = 1, binaryLeakLimit = 2.0;
+int numOfLeaks = 2, iterations = 1;
 char inputFile[50] = "hanoi-1.inp";
 char reportFile[50] = "hanoi.rpt";
-char directoryString[50] = "L1_MIP/Current";
+char directoryString[50] = "L1_MIP/";
+//
+//
 
+char globalDirName[100];
 int totalNodeCount;
 int *leakNodes;
 double totalDemand, bigM = 999999.99;
@@ -32,7 +38,7 @@ FILE *ptr_file;
 
 void initializeArrays();
 void populateMatricies(int);
-void randomizeLeaks(double, int, int);
+void randomizeLeaks(int, int);
 void printLeakInfo(int);
 void analyzeBaseCase(int);
 void oneLeak(int, double, int, int);
@@ -42,12 +48,13 @@ int writeSummaryFile(int, int, double, double[]);
 int writeRawResults(int, int, double[]);
 int writeLeakFile(int);
 int writeErrorFile();
+int setOutputDirectory();
 
 int main(int argc, char *argv[]) 
 {
 	GRBenv *env = NULL;
 	GRBmodel *model = NULL;	
-	int  i, j, k, numNodes, storage;
+	int  i, j, k, numNodes, storage, directoryCode;
 	double errorSum;
 	
 	//Randomize the leak locations, commented out will use the same seeding 
@@ -107,13 +114,15 @@ int main(int argc, char *argv[])
 	/* Create environment */
  	error = GRBloadenv(&env, "L1_MIP.log");
  	if (error) goto QUIT;
-		
+ 	
+ 	directoryCode = setOutputDirectory();
+	
 	//Create observation	
 	for (k = 0; k < iterations; k++)
 	{		
 		initializeArrays();
 		
-		randomizeLeaks(emitterCoeff, totalNodeCount, numOfLeaks);
+		randomizeLeaks(totalNodeCount, numOfLeaks);
 		
 		analyzeBaseCase(totalNodeCount);
 		
@@ -444,7 +453,7 @@ void populateMatricies(int numNodes)
 	}
 }
 
-void randomizeLeaks(double emitterCoeff, int numNodes, int numOfLeaks)
+void randomizeLeaks(int numNodes, int numOfLeaks)
 {	
 	int i, j;
 	
@@ -695,8 +704,7 @@ int writeSummaryFile(int k, int optimstatus, double objval, double sol[])
 	
 	//Create summary CSV file for each set of leaks
 	sequentialFile[0] = '\0';
-	strcat(sequentialFile, "/home/andrew/Ubuntu One/Research/Thesis_Results/");
-	strcat(sequentialFile, directoryString);
+	strcat(sequentialFile, globalDirName);
 	strcat(sequentialFile, "/Summary_");
 	sprintf(buffer,"%d",k);
 	strcat(sequentialFile, buffer);
@@ -760,8 +768,7 @@ int writeRawResults(int k, int optimstatus, double sol[])
 	
 	//Create summary CSV file for each set of leaks
 	sequentialFile[0] = '\0';
-	strcat(sequentialFile, "/home/andrew/Ubuntu One/Research/Thesis_Results/");
-	strcat(sequentialFile, directoryString);
+	strcat(sequentialFile, globalDirName);
 	strcat(sequentialFile, "/Run_");
 	sprintf(buffer,"%d",k);
 	strcat(sequentialFile, buffer);
@@ -805,8 +812,7 @@ int writeErrorFile()
 	
 	//Create summary CSV file for each set of leaks
 	sequentialFile[0] = '\0';
-	strcat(sequentialFile, "/home/andrew/Ubuntu One/Research/Thesis_Results/");
-	strcat(sequentialFile, directoryString);
+	strcat(sequentialFile, globalDirName);
 	strcat(sequentialFile, "/Error.csv");
 	
 	ptr_file = fopen(sequentialFile, "w");
@@ -838,8 +844,7 @@ int writeLeakFile(int k)
 	
 	//Create summary CSV file for each set of leaks
 	sequentialFile[0] = '\0';
-	strcat(sequentialFile, "/home/andrew/Ubuntu One/Research/Thesis_Results/");
-	strcat(sequentialFile, directoryString);
+	strcat(sequentialFile, globalDirName);
 	strcat(sequentialFile, "/Leaks_");
 	sprintf(buffer,"%d",k);
 	strcat(sequentialFile, buffer);
@@ -864,4 +869,36 @@ int writeLeakFile(int k)
 	
 	fclose(ptr_file);
 	return 0;	
+}
+
+int setOutputDirectory()
+{
+	int status;
+	char dirName[100], date[25];
+	
+	time_t seconds;
+	struct tm *time_struct;
+	
+	time(&seconds);
+	time_struct = localtime(&seconds);
+	
+	//Create summary CSV file for each set of leaks
+	dirName[0] = '\0';
+	strcat(dirName, "/home/andrew/Ubuntu One/Research/Thesis_Results/");
+	strcat(dirName, directoryString);
+	strftime(date, 50, "%Y_%m_%d", time_struct);
+	strcat(dirName, date);
+	status = mkdir(dirName, S_IRWXU | S_IRWXG | S_IRWXO);
+	
+	strcpy(globalDirName, dirName);
+	
+	//printf("Global dirname \t %s\n\n\n", globalDirName);
+	
+	if (status != 0)
+	{
+		printf("/nDirectory Creation Error/n");
+		return status;
+	}
+	
+	return 0;
 }
