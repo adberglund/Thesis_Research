@@ -80,7 +80,6 @@ int main(int argc, char *argv[])
 	char      vtype[(totalNodeCount * 3)];	
 	int       optimstatus;
 	double    objval;
-
 	
 	baseCasePressureMatrix = (double *) calloc(totalNodeCount, sizeof(double));
 	observedPressure = (double *) calloc(totalNodeCount, sizeof(double));

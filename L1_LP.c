@@ -266,6 +266,8 @@ int main(int argc, char *argv[])
 	return 0;
 }
 
+
+
 //FUNCTION
 //Initialze various arrays to be populated during simulation
 void initializeArrays()
