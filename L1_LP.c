@@ -18,7 +18,7 @@
 //
 //
 double delta = 1;
-int numOfLeaks = 2, iterations = 1;
+int numOfLeaks = 2, iterations = 100;
 char inputFile[50] = "hanoi-1.inp";
 char reportFile[50] = "hanoi.rpt";
 char directoryString[50] = "L1_LP/";

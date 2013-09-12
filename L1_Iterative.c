@@ -17,7 +17,7 @@
 //	for number of leaks and number of simulations  
 //
 //
-int numOfLeaks = 2, iterations =5;
+int numOfLeaks = 2, iterations = 100;
 double delta = 1, binaryLeakLimit = 2.0;
 char inputFile[50] = "hanoi-1.inp";
 char reportFile[50] = "hanoi.rpt";
@@ -115,7 +115,7 @@ int main(int argc, char *argv[])
 	for(i = 0; i < (totalNodeCount * 2); i++)
 		Ahat[i] = malloc( (totalNodeCount * 2) * sizeof(double) );	
 		 
-	/* Create environment */
+	// Create environment 
  	error = GRBloadenv(&env, "L1_Iterative.log");
  	if (error) goto QUIT;
  	
@@ -146,8 +146,8 @@ int main(int argc, char *argv[])
  			vtype[i] = GRB_CONTINUOUS; 			
  		}
  		 				
-		error = GRBaddvars(model, (totalNodeCount * 2), 0, NULL, NULL, NULL, obj,
-			NULL, NULL, vtype, NULL);
+		error = GRBaddvars(model, (totalNodeCount * 2), 0, NULL, NULL, NULL, 
+			obj, NULL, NULL, vtype, NULL);
 		if (error) goto QUIT;
 		
 		// Integrate new variables		
@@ -173,14 +173,7 @@ int main(int argc, char *argv[])
 		error = GRBgetdblattrarray(model, GRB_DBL_ATTR_X, 0, 
 			(totalNodeCount * 2), sol);
 		if (error) goto QUIT;
-		
-		
-		
-		
-		//Can be added to function?
-		//
-		//
-		//
+	
 		averageDelta = averagePreviousDelta = 0.0;
 		
 		//for (j = 0; j < numOfLeaks; j++)
@@ -190,17 +183,13 @@ int main(int argc, char *argv[])
 		
 		findHighestMagnitudes(sol);
 		
-		//for (i = 0; i < totalNodeCount; i++)
-		//{
-		//	printf("sol[%d] = %f \n", i, sol[i]);
-		//}
 		for (i = 0; i < numOfLeaks; i++)
 		{
 			averageDelta += leakGuesses[i];
-			//printf("leakGuess[%d] = %f \n", i, leakGuesses[i]);
 		}
+		
 		averageDelta = averageDelta / numOfLeaks;
-		//printf("\t\t\taverage Delta: %f\n\n", averageDelta);
+		
 		for (i = 0; i < totalNodeCount; i++)
 		{
 			previousDeltas[i] = deltas[i];
@@ -210,21 +199,15 @@ int main(int argc, char *argv[])
 		}		
 		averagePreviousDelta = averagePreviousDelta / totalNodeCount;
 
-		/* Free model */
+		// Free model 
 		GRBfreemodel(model);
 		
 		do
 		{
 			counter++;
-			
-			//reinitializeArrays();
-							
-			//analyzeBaseCase(totalNodeCount);				 			
-			
-			//nLeaks(numOfLeaks, numNodes);									
-			printf("\n\n\nWhere my error at 1\n\n\n");
+										
 			populateMatricies(totalNodeCount);		
-			printf("\n\n\nWhere my error at 2\n\n\n");
+	
 			// Create an empty model 		
  			error = GRBnewmodel(env, &model, "L1MIP", 0, NULL, NULL, NULL, NULL, 
  				NULL);
@@ -286,16 +269,9 @@ int main(int argc, char *argv[])
 			if (error) goto QUIT;	
         	
 			error = GRBoptimize(model);
-			if (error) goto QUIT;
+			if (error) goto QUIT;	
 			
-			/* Write model to 'L1Approx.lp' */		
-			//error = GRBwrite(model, "L1_MIP.lp");
-			//if (error) goto QUIT;
-			
-			//error = GRBwrite(model, "L1_MIP.sol");
-			//if (error) goto QUIT;
-			
-			/* Capture solution information */		
+			// Capture solution information		
 			error = GRBgetintattr(model, GRB_INT_ATTR_STATUS, &optimstatus);
 			if (error) goto QUIT;
 			
@@ -308,39 +284,7 @@ int main(int argc, char *argv[])
 				(totalNodeCount * 3), sol);
 			if (error) goto QUIT;
 			
-			//averageDelta = averagePreviousDelta = 0.0;
-			//for (i = 0; i < 31; i++)
-			//{
-				//printf("%f \t", sol[i]);			
-			//}
-			
-			//for (j = 0; j < numOfLeaks; j++)
-			//{
-				//leakGuesses[j] = 0.0;
-			//}
-			
 			findHighestMagnitudes(sol);	
-			
-			/*
-			for (j = 0; j < numOfLeaks; j++)
-			{	
-				for (i = 0; i < 31; i++)
-				{
-					placeHolder = 0;				
-					if(sol[i] > leakGuesses[j])
-					{
-						for(l = 0; l < numOfLeaks; l++)
-						{
-							if(sol[i] == leakGuesses[l])
-								placeHolder++;
-						}
-						if (placeHolder == 0)
-							leakGuesses[j] = sol[i];
-					}
-				}
-			}
-			*/
-			//printf("\n\t\t\t\t\t Run # %d \n\n", counter);		
 			
 			averagePreviousDelta = averageDelta;
 			averageDelta = 0;
@@ -352,27 +296,17 @@ int main(int argc, char *argv[])
 			}
 			
 			averageDelta = averageDelta / numOfLeaks;
-			
-			//printf("\t\t\tprevious averageDelta %f \t\t average Delta: %f\n\n", 
-			//	averagePreviousDelta, averageDelta);
 							
 			for (i = 0; i < totalNodeCount; i++)
 			{
-				previousDeltas[i] = deltas[i];
-				//averagePreviousDelta += previousDeltas[i];
-				
-				//July 30, 2013
-				//Alternating methods for determining next iteration's deltas
-				//deltas[i] = deltas[i] + 1;
+				previousDeltas[i] = deltas[i];				
 				deltas[i] = averageDelta;
-				
-				//averageDelta += deltas[i];
 			}
 			
 			objectiveValues[k] = objval;
 			modelError[k] = calculateError(totalNodeCount, sol);
 			
-			/* Free model */
+			// Free model
 			GRBfreemodel(model);
 			
 		}while((objval - previousObjectiveValue) < 0); 		
@@ -391,12 +325,6 @@ int main(int argc, char *argv[])
 		{
 			counter++;
 			
-			//initializeArrays();
-							
-			//analyzeBaseCase(numNodes);				 			
-
-			//nLeaks(numOfLeaks, numNodes);							
-					
 			populateMatricies(totalNodeCount);		
 		
 			// Create an empty model 		
@@ -462,7 +390,7 @@ int main(int argc, char *argv[])
 			error = GRBoptimize(model);
 			if (error) goto QUIT;
 						
-			/* Capture solution information */		
+			// Capture solution information		
 			error = GRBgetintattr(model, GRB_INT_ATTR_STATUS, &optimstatus);
 			if (error) goto QUIT;
 			
@@ -475,53 +403,6 @@ int main(int argc, char *argv[])
 				(totalNodeCount * 3), sol);
 			if (error) goto QUIT;
 			
-			//averageDelta = averagePreviousDelta = 0.0;
-			//for (i = 0; i < totalNodeCount; i++)
-			//{
-				//printf("%f \t", sol[i]);			
-			//}
-			
-			//for (j = 0; j < numOfLeaks; j++)
-			//{
-			//	leakGuesses[j] = 0.0;
-			//}
-			
-			//findHighestMagnitudes();
-			/*
-			for (j = 0; j < numOfLeaks; j++)
-			{	
-				for (i = 0; i < 31; i++)
-				{
-					placeHolder = 0;				
-					if(sol[i] > leakGuesses[j])
-					{
-						for(l = 0; l < numOfLeaks; l++)
-						{
-							if(sol[i] == leakGuesses[l])
-								placeHolder++;
-						}
-						if (placeHolder == 0)
-							leakGuesses[j] = sol[i];
-					}
-				}
-			}
-			*/
-			//printf("\n\t\t\t\t\t Run # %d \n\n", counter);		
-			
-			//averagePreviousDelta = averageDelta;
-			//averageDelta = 0;
-			
-			//for (i = 0; i < numOfLeaks; i++)
-			//{
-			//	averageDelta += leakGuesses[i];
-				//printf("leakGuess[%d] = %f \n", i, leakGuesses[i]);
-			//}
-			
-			//averageDelta = averageDelta / numOfLeaks;
-			
-			//printf("\t\t\tprevious averageDelta %f \t\t average Delta: %f\n\n", 
-			//	averagePreviousDelta, averageDelta);
-							
 			for (i = 0; i < totalNodeCount; i++)
 			{	
 				if  (sol[i] > 0.01)
@@ -533,43 +414,14 @@ int main(int argc, char *argv[])
 			objectiveValues[k] = objval;
 			modelError[k] = calculateError(numNodes, sol);
 			
-			/* Free model */
+			// Free model
 			GRBfreemodel(model);
 			
-		}while((objval - previousObjectiveValue) < 0); //while(fabs(averageDelta-averagePreviousDelta) > 0.10 );//while(counter < 20);		
-		
-	
+		}while((objval - previousObjectiveValue) < 0);		
 		
 		writeSummaryFile(k, optimstatus, objval, sol);
 		writeRawResults(k, optimstatus, sol);
 		writeLeakFile(k);
-		/*
-		printf("\nOptimization complete\n");
-		if (optimstatus == GRB_OPTIMAL)
-		{
-			printf("Optimal objective: %.4e\n", objval);
-			for(i = 0; i < 31; i++)
-			{		  	
-				//printf("  delta[%d] = %f \n", (i+1), deltas[i]);
-			}
-			for(i = 0; i < 62; i++)
-			{		  	
-				printf("  sol[%d] = %2.4f \n", (i+1), sol[i]);
-			}
-			for(i = 62; i < 93; i++)
-			{		  	
-				printf("  sol[%d] = %1.0f \t binary for sol[%d] \n", (i+1), sol[i], (i-61));
-			}
-		} else if (optimstatus == GRB_INF_OR_UNBD) 
-		{
-			printf("Model is infeasible or unbounded\n");
-		} else 
-		{
-		  printf("Optimization was stopped early\n");
-		}
-		
-		printLeakInfo(numOfLeaks);
-		*/
 	}
 	
 	
@@ -811,30 +663,6 @@ void randomizeLeaks(int numNodes, int numOfLeaks)
 		for (i = 0; i < numOfLeaks; i++)
 		{			
 			leakNodes[i] = (int)(rand()%numNodes)+1;
-			/*
-			if (i > 0)
-			{	
-				for (j = 0; j < i; j++)
-				{
-					if (leakNodes[i] == leakNodes[j])
-					{
-						do
-						{						
-							leakNodes[i] = (int)(rand()%numNodes)+1;
-						}while (leakNodes[i] == leakNodes[j]);
-					}
-				}
-			}
-			*/
-			/*
-			if (leakNodes[i] == 32)
-			{
-				do
-				{			
-					leakNodes[i] = (int)(rand()%numNodes);//+1;
-				}while(leakNodes[i] == 32);
-			}
-			*/
 			
 			j = i;
 			
