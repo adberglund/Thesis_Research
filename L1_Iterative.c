@@ -17,10 +17,11 @@
 //	for number of leaks and number of simulations  
 //
 //
-int numOfLeaks = 2, iterations = 10;
-double delta = 1, binaryLeakLimit = 2.0;
-char inputFile[50] = "hanoi-1.inp";
-char reportFile[50] = "hanoi.rpt";
+int numOfLeaks = 2, iterations = 1;
+double delta = 1, minLeakSize = 10.0, maxLeakSize = 100.0,
+	binaryLeakLimit = 2.0;
+char inputFile[50] = "Net3.inp";
+char reportFile[50] = "Net3.rpt";
 char directoryString[50] = "L1_Iterative/";
 //
 //
@@ -61,7 +62,7 @@ int main(int argc, char *argv[])
 	GRBenv *env = NULL;
 	GRBmodel *model = NULL;
 	int  i, j, k, l, numNodes, storage, counter, directoryCode;
-	double errorSum, previousObjectiveValue;
+	double previousObjectiveValue;
 	
 	//Randomize the leak locations, commented out will use the same seeding 
 	//for each run
@@ -211,6 +212,7 @@ int main(int argc, char *argv[])
 		}		
 		averagePreviousDelta = averagePreviousDelta / totalNodeCount;
 
+		
 		// Free model 
 		GRBfreemodel(model);
 		
@@ -295,6 +297,12 @@ int main(int argc, char *argv[])
 			error = GRBgetdblattrarray(model, GRB_DBL_ATTR_X, 0, 
 				(totalNodeCount * 3), sol);
 			if (error) goto QUIT;
+			
+			
+			for (i = totalNodeCount*2; i < totalNodeCount*3; i++)
+			{	
+				printf( "\n\t\t\tsol[%d] = %f", i, sol[i]);
+			}
 			
 			findHighestMagnitudes(sol);	
 			
@@ -414,6 +422,11 @@ int main(int argc, char *argv[])
 			error = GRBgetdblattrarray(model, GRB_DBL_ATTR_X, 0, 
 				(totalNodeCount * 3), sol);
 			if (error) goto QUIT;
+			
+			for (i = totalNodeCount*2; i < totalNodeCount*3; i++)
+			{	
+				printf( "\n\t\t\tsol[%d] = %f", i, sol[i]);
+			}
 			
 			for (i = 0; i < totalNodeCount; i++)
 			{	
@@ -613,7 +626,7 @@ void initializeArrays()
 //Also calls single leak simulations for each node in the network
 void populateMatricies(int numNodes)
 {
-	int i, j, temp;
+	int i, j;
 	
 	//printf("local numNodes variable = %d", numNodes);
 	//getchar();
@@ -744,13 +757,13 @@ void randomizeLeaks(int numNodes, int numOfLeaks)
 		
 		for(i = 0; i < numOfLeaks; i++)
 		{
-			leakMagnitudes[i] = drand48() * 10;
-			if(leakMagnitudes[i] < 0.5)
+			leakMagnitudes[i] = drand48() * maxLeakSize;
+			if(leakMagnitudes[i] < minLeakSize)
 			{
 				do
 				{
-					leakMagnitudes[i] = drand48() * 10;
-				}while(leakMagnitudes[i] < 0.5);
+					leakMagnitudes[i] = drand48() * maxLeakSize;
+				}while(leakMagnitudes[i] < minLeakSize);
 			}
 		}		
 
@@ -1015,14 +1028,21 @@ int writeSummaryFile(int k, int optimstatus, double objval, double sol[])
 	if (optimstatus == GRB_OPTIMAL) 
 	{
 		fprintf(ptr_file, "Optimal objective:, %.4e\n", objval);
-		for(i = 0; i < (totalNodeCount * 2); i++)
+		for (i = 0; i < totalNodeCount; i++)
+		{
+			ENgetnodeid((i+1), name);		  	
+			fprintf(ptr_file, "sol[%d] =, %f, Node ID:, %s \n", 
+				(i+1), sol[i], name);
+		}
+		for (i = totalNodeCount; i < (totalNodeCount * 2); i++)
 		{		  	
-			fprintf(ptr_file, "  sol[%d] =, %f \n", (i+1), sol[i]);
+			fprintf(ptr_file, "sol[%d] =, %f, Error for sol[%d] \n",
+				(i+1), sol[i], (i + 1 - totalNodeCount));
 		}
 		for(i = (totalNodeCount * 2); i < (totalNodeCount * 3); i++)
 		{		  	
-			fprintf(ptr_file, "sol[%d] =, %f, binary for, sol[%d] \n",
-				((int)(i+1)), sol[i], ((i - (totalNodeCount * 2) + 1)));
+			fprintf(ptr_file, "sol[%d] =, %f, binary for, sol[%d] \n", 
+				(i + 1), sol[i], (i + 1 - (totalNodeCount * 2)) );
 		}
 	} else if (optimstatus == GRB_INF_OR_UNBD) 
 	{
@@ -1085,7 +1105,7 @@ int writeRawResults(int k, int optimstatus, double sol[])
 //Create an output file for each set of iterations
 int writeErrorFile()
 {	
-	char sequentialFile[100], buffer[10];
+	char sequentialFile[100];
 	int i; 
 	
 	i = 0;	

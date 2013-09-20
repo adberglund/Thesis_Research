@@ -17,10 +17,10 @@
 //	for number of leaks and number of simulations  
 //
 //
-double delta = 1, minLeakSize = 1.0;
-int numOfLeaks = 2, iterations = 100;
-char inputFile[50] = "hanoi-1.inp";
-char reportFile[50] = "hanoi.rpt";
+int numOfLeaks = 2, iterations = 1;
+double delta = 1, minLeakSize = 1.0, maxLeakSize = 10.0;
+char inputFile[50] = "Net3.inp";
+char reportFile[50] = "Net3.rpt";
 char directoryString[50] = "L1_LP/";
 //
 //
@@ -481,12 +481,12 @@ void randomizeLeaks(int numNodes, int numOfLeaks)
 		
 		for(i = 0; i < numOfLeaks; i++)
 		{
-			leakMagnitudes[i] = drand48() * 10;
+			leakMagnitudes[i] = drand48() * maxLeakSize;
 			if (leakMagnitudes[i] < minLeakSize)
 			{
 				do
 				{
-					leakMagnitudes[i] = drand48() * 10;
+					leakMagnitudes[i] = drand48() * maxLeakSize;
 				}while (leakMagnitudes[i] < minLeakSize);
 			}
 		}		
