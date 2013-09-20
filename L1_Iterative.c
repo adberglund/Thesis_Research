@@ -17,7 +17,7 @@
 //	for number of leaks and number of simulations  
 //
 //
-int numOfLeaks = 2, iterations = 1;
+int numOfLeaks = 2, iterations = 10;
 double delta = 1, binaryLeakLimit = 2.0;
 char inputFile[50] = "hanoi-1.inp";
 char reportFile[50] = "hanoi.rpt";
@@ -1022,7 +1022,7 @@ int writeSummaryFile(int k, int optimstatus, double objval, double sol[])
 		for(i = (totalNodeCount * 2); i < (totalNodeCount * 3); i++)
 		{		  	
 			fprintf(ptr_file, "sol[%d] =, %f, binary for, sol[%d] \n",
-				((int)(i+1)), sol[i]), ((int)(i - (totalNodeCount * 2) + 1));
+				((int)(i+1)), sol[i], ((i - (totalNodeCount * 2) + 1)));
 		}
 	} else if (optimstatus == GRB_INF_OR_UNBD) 
 	{

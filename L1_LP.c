@@ -17,7 +17,7 @@
 //	for number of leaks and number of simulations  
 //
 //
-double delta = 1;
+double delta = 1, minLeakSize = 1.0;
 int numOfLeaks = 2, iterations = 100;
 char inputFile[50] = "hanoi-1.inp";
 char reportFile[50] = "hanoi.rpt";
@@ -482,6 +482,13 @@ void randomizeLeaks(int numNodes, int numOfLeaks)
 		for(i = 0; i < numOfLeaks; i++)
 		{
 			leakMagnitudes[i] = drand48() * 10;
+			if (leakMagnitudes[i] < minLeakSize)
+			{
+				do
+				{
+					leakMagnitudes[i] = drand48() * 10;
+				}while (leakMagnitudes[i] < minLeakSize);
+			}
 		}		
 
 }
@@ -707,9 +714,16 @@ int writeSummaryFile(int k, int optimstatus, double objval, double sol[])
 	if (optimstatus == GRB_OPTIMAL) 
 	{
 		fprintf(ptr_file, "Optimal objective:, %.4e\n", objval);
-		for(i = 0; i < (totalNodeCount * 2); i++)
+		for (i = 0; i < totalNodeCount; i++)
+		{
+			ENgetnodeid((i+1), name);		  	
+			fprintf(ptr_file, "  sol[%d] =, %f, Node ID:, %s \n", 
+				(i+1), sol[i], name);
+		}
+		for (i = totalNodeCount; i < (totalNodeCount * 2); i++)
 		{		  	
-			fprintf(ptr_file, "  sol[%d] =, %f \n", (i+1), sol[i]);
+			fprintf(ptr_file, "  sol[%d] =, %f, Error for sol[%d] \n",
+				(i+1), sol[i], (i + 1 - totalNodeCount));
 		}
 	} else if (optimstatus == GRB_INF_OR_UNBD) 
 	{
