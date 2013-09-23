@@ -48,6 +48,7 @@ int writeSummaryFile(int, int, double, double[]);
 int writeRawResults(int, int, double[]);
 int writeLeakFile(int);
 int writeErrorFile();
+int writeAhat(int);
 int setOutputDirectory();
 
 int main(int argc, char *argv[]) 
@@ -73,20 +74,25 @@ int main(int argc, char *argv[])
 	ENgetcount(EN_TANKCOUNT, &storage);
 	totalNodeCount = numNodes - storage;
 	
+	printf("\n\ntotalNodes = %d\n\n", totalNodeCount);
+	
+		
 	ENgettimeparam(EN_DURATION, &simDuration);
 	
 	if (simDuration > 0)
 	{
-		lengthOfSubPeriod = (double)(simDuration / numOfSubPeriods);
+		lengthOfSubPeriod = (double)(simDuration / (3600 * numOfSubPeriods));
 	}
 	else lengthOfSubPeriod = 1;
-	
+	printf("\n\nduration = %ld\n\n", simDuration);
+	printf("lengthOfSubPeriod = %f", lengthOfSubPeriod);
+	printf("\n\t\t\tSeg Fault Tester Numero 1\n\n");
 	int       error = 0;
-	double    sol[(int)((totalNodeCount * 2) * lengthOfSubPeriod)];
+	double    sol[(int)((totalNodeCount * 2) * lengthOfSubPeriod)];	
 	int       ind[(totalNodeCount * 2)];
-	double    val[(totalNodeCount * 2)];
-	double    obj[(totalNodeCount * 2)];
-	char      vtype[(totalNodeCount * 2)];	
+	double    val[(totalNodeCount * 2)];	
+	double    obj[(int)((totalNodeCount * 2) * lengthOfSubPeriod)];
+	char      vtype[(int)((totalNodeCount * 2) * lengthOfSubPeriod)];	
 	int       optimstatus;
 	double    objval;
 	
@@ -216,15 +222,22 @@ int main(int argc, char *argv[])
  		{
  			for (j = 0; j < (totalNodeCount * 2); j++)
  			{
- 				obj[j] = coefficients[i]; 			
- 				vtype[j] = GRB_CONTINUOUS; 			
+ 				obj[j + (totalNodeCount * 2 * i)] = coefficients[j]; 			
+ 				vtype[j + (totalNodeCount * 2 * i)] = GRB_CONTINUOUS;
+ 				//printf("obj[%d] = %f \t\t vtype[%d] = %d\n", 
+ 					//j + (totalNodeCount * 2 * i), 
+ 					//obj[j + (totalNodeCount * 2 * i)], 
+ 					//j + (totalNodeCount * 2 * i), 
+ 					//vtype[j + (totalNodeCount * 2 * i)]);
  			}
  		
- 		 				
-		error = GRBaddvars(model, (totalNodeCount * 2), 0, NULL, NULL, NULL, obj,
-			NULL, NULL, vtype, NULL);
+ 		} 			
+ 		
+		error = GRBaddvars(model, (int)((totalNodeCount * 2) * 
+			lengthOfSubPeriod), 0, NULL, NULL, NULL, obj, NULL, NULL, vtype, 
+			NULL);
 		if (error) goto QUIT;
-		}
+		printf("\n\t\t\tSeg Fault Tester Numero 2\n\n");
 		
 		// Integrate new variables		
 		error = GRBupdatemodel(model);
@@ -271,10 +284,16 @@ int main(int argc, char *argv[])
 		if (optimstatus == GRB_OPTIMAL)
 		{
 			printf("Optimal objective: %.4e\n", objval);
-			//for(i = 0; i < (totalNodeCount * 2); i++)
-			//{		  	
-				//printf("  sol[%d] = %f \n", (i+1), sol[i]);
-			//}
+			
+			for (j = 0; j < (totalNodeCount * 2); j++)
+			{
+				printf("  sol[%d, t = 1] = %f \t", (j+1), sol[j]);
+				printf("  sol[%d, t = 2] = %f \t", (j+1), sol[j + (totalNodeCount * 2)]);
+				printf("  sol[%d, t = 3] = %f \t", (j+1), sol[j + 2 * (totalNodeCount * 2)]);
+				printf("  sol[%d, t = 4] = %f \t", (j+1), sol[j + 3 * (totalNodeCount * 2)]);				
+				printf("\n");
+			}
+				
 		} else if (optimstatus == GRB_INF_OR_UNBD) 
 		{
 			printf("Model is infeasible or unbounded\n");
@@ -453,7 +472,8 @@ void populateMatricies(int numNodes)
 	{
 		for (j = 0; j < numNodes; j++)
 		{
-			b[i][j] = (baseCasePressureMatrix[i][j] - observedPressure[i][j]);	
+			b[i][j] = (baseCasePressureMatrix[i][j] - observedPressure[i][j]);
+			//printf("baseCasePressureMatrix[%d][%d] = %f\n", i, j, baseCasePressureMatrix[i][j]);
 			//printf("b[%d] = %f\n",i,b[i]);
 		}
 	}
@@ -470,6 +490,16 @@ void populateMatricies(int numNodes)
 			bhat[i][j] = -b[i][j-numNodes];
 		}
 	}
+	//for (i = 0; i < lengthOfSubPeriod; i++)
+	//{
+		//printf("\n");
+		//for (j = 0; j < numNodes * 2; j++)
+		//{
+			//printf(" bhat[%d] = %f ", j + numNodes * 2 * i, bhat[i][j]);
+		//}
+		//printf("\n");
+	//}
+	
 	
 	for(i = 1; i <= numNodes; i++)
 	{		
@@ -485,7 +515,8 @@ void populateMatricies(int numNodes)
 			for (k = 0; k < numNodes; k++)
 			{
 				largeA[i][j][k] = (baseCasePressureMatrix[i][j] - 
-					largePressureMatrix[i][j][k]) / delta;			
+					largePressureMatrix[i][j][k]) / delta;
+				//printf("largeA[%d][%d][%d] = %f\n", i,j,k, largeA[i][j][k]);
 			}			
 		}
 	}
@@ -535,6 +566,11 @@ void populateMatricies(int numNodes)
 		}
 	}
 	
+	for (i = 0; i < lengthOfSubPeriod; i++)
+	{
+		writeAhat(i);
+	}
+	
 	//Keep track of the emitter coefficient at every network node (most should
 	//	be zero)
 	for (i = 0; i < numOfLeaks; i++)
@@ -563,7 +599,7 @@ void randomizeLeaks(int numNodes, int numOfLeaks)
 			leakDemands[i][j] = 0;
 		}
 	}
-printf("\n\t\t\tSeg Fault Tester Numero 1\n\n");
+
 	for (i = 0; i < numOfLeaks; i++)
 	{			
 		leakNodes[i] = (int)(rand()%numNodes)+1;
@@ -645,12 +681,14 @@ void analyzeBaseCase(int nodeCount, int simTime)
 	long t, tstep, hydraulicTimeStep, duration;
 	float pressure;
 	int i, currentTime;	
-	
+
 	i = currentTime = 0;
 	pressure = 0.0;
 	
 	ENgettimeparam( EN_HYDSTEP, &hydraulicTimeStep );
 	ENgettimeparam( EN_DURATION, &duration );
+	
+	//printf("\n\n\n\nhydraulicTimeStep = %ld \t duration = %ld\n\n\n\n", hydraulicTimeStep, duration);
 	
 	//Open and initialize the hydraulic solver
 	ENopenH();  
@@ -661,7 +699,8 @@ void analyzeBaseCase(int nodeCount, int simTime)
 	{  		
 		ENrunH(&t);		
 		// Retrieve hydraulic results for time t
-		if (t%hydraulicTimeStep == 0 && t <= simTime)
+		//printf("\n\nt = %ld\n\n", t);
+		if (t%hydraulicTimeStep == 0 && currentTime < simTime)
 		{
 			for (i=1; i <= nodeCount; i++)
 			{
@@ -670,6 +709,7 @@ void analyzeBaseCase(int nodeCount, int simTime)
 			}
 			currentTime++;
 		}
+			
 		ENnextH(&tstep);  	
 	} while (tstep > 0); 
 	
@@ -701,7 +741,7 @@ void oneLeak(int index, double emitterCoeff, int nodeCount, int columnNumber,
 	//Run the hydraulic analysis
 	do {  	
 		ENrunH(&t);		
-		if (t%hydraulicTimeStep == 0 && t <= simTime)
+		if (t%hydraulicTimeStep == 0 && currentTime < simTime)
 		{
 			for (i = 1; i <= nodeCount; i++)
 			{			
@@ -752,7 +792,7 @@ void nLeaks(int leakCount, int nodeCount, int simTime)
 	do 
 	{  	
 		ENrunH(&t);
-		if (t%hydraulicTimeStep == 0 && t <= simTime)
+		if (t%hydraulicTimeStep == 0 && currentTime < simTime)
 		{
 			for (i = 1; i <= nodeCount; i++)
 			{			
@@ -996,6 +1036,41 @@ int writeLeakFile(int k)
 		fprintf(ptr_file,"leak %d, %d, Node ID, %s, Magnitude, %f",
 			i, leakNodes[i], name, leakMagnitudes[i]);
 	}
+	
+	fclose(ptr_file);
+	return 0;	
+}
+
+
+int writeAhat(int k)
+{
+	int i, j;
+	char sequentialFile[100], buffer[10], name[10];
+	i = j = 0;	
+	
+	//Create summary CSV file for each set of leaks
+	sequentialFile[0] = '\0';
+	//strcat(sequentialFile, "/home/andrew/Ubuntu One/Research/Thesis_Results/");
+	//strcat(sequentialFile, directoryString);
+	strcat(sequentialFile, globalDirName);
+	strcat(sequentialFile, "/Ahat_");
+	sprintf(buffer,"%d",k);
+	strcat(sequentialFile, buffer);
+	strcat(sequentialFile, ".csv");
+	
+	ptr_file = fopen(sequentialFile, "w");
+	if (!ptr_file)
+		return 1;	
+	
+	for(i = 0; i < (totalNodeCount * 2); i++)
+	{			
+		for (j = 0; j < (totalNodeCount * 2); j++)
+		{
+			fprintf(ptr_file,"%f,", Ahat[k][i][j]);				
+		}
+		fprintf(ptr_file,"\n");
+	}
+	
 	
 	fclose(ptr_file);
 	return 0;	
