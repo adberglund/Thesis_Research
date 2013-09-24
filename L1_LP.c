@@ -86,9 +86,7 @@ int main(int argc, char *argv[])
 		lengthOfSubPeriod = (double)(simDuration / (SECONDS_PER_HOUR * numOfSubPeriods));
 	}
 	else lengthOfSubPeriod = 1;
-	printf("\n\nduration = %ld\n\n", simDuration);
-	printf("lengthOfSubPeriod = %f", lengthOfSubPeriod);
-	printf("\n\t\t\tSeg Fault Tester Numero 1\n\n");
+	
 	int       error = 0;
 	double    sol[(int)((totalNodeCount * 2) * lengthOfSubPeriod)];	
 	int       ind[(int)((totalNodeCount * 2) * lengthOfSubPeriod)];
@@ -239,7 +237,6 @@ int main(int argc, char *argv[])
 			lengthOfSubPeriod), 0, NULL, NULL, NULL, obj, NULL, NULL, vtype, 
 			NULL);
 		if (error) goto QUIT;
-		printf("\n\t\t\tSeg Fault Tester Numero 2\n\n");
 		
 		// Integrate new variables		
 		error = GRBupdatemodel(model);
@@ -305,6 +302,7 @@ int main(int argc, char *argv[])
 		}
 		
 		objectiveValues[k] = objval;
+		
 		modelError[k] = calculateError(totalNodeCount, sol);		
 		
 		//writeSummaryFile(k, optimstatus, objval, sol);
@@ -312,57 +310,100 @@ int main(int argc, char *argv[])
 		//writeLeakFile(k);
 		
 		/* Free model */
-		GRBfreemodel(model);		
+		GRBfreemodel(model);				
 	}
-	
+	printf("\n\t\t\tSeg Fault Tester Numero 1\n\n");
 	ENclose();
-	
+	printf("\n\t\t\tSeg Fault Tester Numero 2\n\n");
 	//writeErrorFile();
+	
+	for(i = 0; i < lengthOfSubPeriod; i++)
+		free((void *)baseCasePressureMatrix[i]);
+	free((void *)baseCasePressureMatrix);
+	
+	for(i = 0; i < lengthOfSubPeriod; i++)
+		free((void *)observedPressure[i]);
+	free((void *)observedPressure);
+	
+	free(coefficients);
+	
+	for(i = 0; i < lengthOfSubPeriod; i++)
+		free((void *)b[i]);
+	free((void *)b);
+	
+	for(i = 0; i < lengthOfSubPeriod; i++)
+		free((void *)bhat[i]);
+	free((void *)bhat);
+	
+	free(realLeakValues);
+	
+	for(i = 0; i < lengthOfSubPeriod; i++)
+		free((void *)singleRunErrors[i]);
+	free((void *)singleRunErrors);
+	
+	for(i = 0; i < lengthOfSubPeriod; i++)
+		free((void *)leakDemands[i]);
+	free((void *)leakDemands);
 	
 	free(leakNodes);
 	free(leakMagnitudes);
-	free(leakDemands);
 	free(modelError);
 	free(objectiveValues);
-	free(baseCasePressureMatrix);
-	free(observedPressure);
-	free(coefficients);
-	free(b);
-	free(bhat);
-	free(realLeakValues);
-	free(singleRunErrors);
 	
-	for(i = 0; i < totalNodeCount; i++)
+	
+	for(i = 0; i < lengthOfSubPeriod; i++)
+	{
+		for(j = 0; j < totalNodeCount; j++)
+		{
+			free((void *)largePressureMatrix[i][j]);
+		}
 		free((void *)largePressureMatrix[i]);
+	}
 	free((void *)largePressureMatrix);
 	
-	for(i = 0; i < totalNodeCount; i++)
+	for(i = 0; i < lengthOfSubPeriod; i++)
+	{
+		for(j = 0; j < totalNodeCount; j++)
+		{
+			free((void *)largeA[i][j]);
+		}
 		free((void *)largeA[i]);
+	}
 	free((void *)largeA);
 	
 	for(i = 0; i < totalNodeCount; i++)
 		free((void *)I[i]);
 	free((void *)I);
 	
-	for(i = 0; i < (totalNodeCount * 2); i++)
+	for(i = 0; i < lengthOfSubPeriod; i++)
+	{
+		for(j = 0; j < totalNodeCount; j++)
+		{
+			free((void *)Ahat[i][j]);
+		}
 		free((void *)Ahat[i]);
+	}
 	free((void *)Ahat);
+	
+	//for(i = 0; i < (totalNodeCount * 2); i++)
+		//free((void *)Ahat[i]);
+	//free((void *)Ahat);
 	
 	
 		QUIT:
 
-		/* Error reporting */
+		// Error reporting
 		
 		if (error) {
 		  printf("ERROR: %s\n", GRBgeterrormsg(env));
 		  exit(1);
 		}
 		
-		/* Free model */
+		// Free model 
 		
 		GRBfreemodel(model);
 		
-		/* Free environment */
+		// Free environment 
 		
 		GRBfreeenv(env);
 			
