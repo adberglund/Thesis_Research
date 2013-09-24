@@ -7,6 +7,8 @@
 #include "epanet2.h" 
 #include "gurobi_c.h"
 
+#define SECONDS_PER_HOUR 3600
+
 //September 10, 2013
 //L1-Approximation (L1 calculates absolute error, in this case, between
 //	simulated and "observed" scenarios and is being used for linear 
@@ -81,7 +83,7 @@ int main(int argc, char *argv[])
 	
 	if (simDuration > 0)
 	{
-		lengthOfSubPeriod = (double)(simDuration / (3600 * numOfSubPeriods));
+		lengthOfSubPeriod = (double)(simDuration / (SECONDS_PER_HOUR * numOfSubPeriods));
 	}
 	else lengthOfSubPeriod = 1;
 	printf("\n\nduration = %ld\n\n", simDuration);
@@ -89,7 +91,7 @@ int main(int argc, char *argv[])
 	printf("\n\t\t\tSeg Fault Tester Numero 1\n\n");
 	int       error = 0;
 	double    sol[(int)((totalNodeCount * 2) * lengthOfSubPeriod)];	
-	int       ind[(totalNodeCount * 2)];
+	int       ind[(int)((totalNodeCount * 2) * lengthOfSubPeriod)];
 	double    val[(totalNodeCount * 2)];	
 	double    obj[(int)((totalNodeCount * 2) * lengthOfSubPeriod)];
 	char      vtype[(int)((totalNodeCount * 2) * lengthOfSubPeriod)];	
@@ -250,7 +252,7 @@ int main(int argc, char *argv[])
 			{
 				for (k = 0; k < (totalNodeCount * 2); k++)
 				{
-					ind[k] = k;
+					ind[k] = k + (i * (totalNodeCount * 2));
 					val[k] = Ahat[i][j][k];			
 				}								
 				error = GRBaddconstr(model, (totalNodeCount * 2), ind, val, 
