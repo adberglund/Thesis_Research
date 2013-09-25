@@ -57,7 +57,7 @@ int main(int argc, char *argv[])
 {
 	GRBenv *env = NULL;
 	GRBmodel *model = NULL;	
-	int  i, j, k, numNodes, storage, directoryCode;
+	int  i, j, k, l, numNodes, storage, directoryCode;
 	//double errorSum;
 	long simDuration;
 	
@@ -65,7 +65,7 @@ int main(int argc, char *argv[])
 	//for each run
 	//srand(time(NULL));
 	
-	i = j = k = numNodes = 0;
+	i = j = k = l = numNodes = 0;
 	simDuration = lengthOfSubPeriod = 0.0;
 	
 	//Open EPANET & Input file
@@ -247,10 +247,10 @@ int main(int argc, char *argv[])
 		{
 			for (j = 0; j < (totalNodeCount * 2); j++)
 			{
-				for (k = 0; k < (totalNodeCount * 2); k++)
+				for (l = 0; l < (totalNodeCount * 2); l++)
 				{
-					ind[k] = k + (i * (totalNodeCount * 2));
-					val[k] = Ahat[i][j][k];			
+					ind[l] = l + (i * (totalNodeCount * 2));
+					val[l] = Ahat[i][j][l];			
 				}								
 				error = GRBaddconstr(model, (totalNodeCount * 2), ind, val, 
 					GRB_LESS_EQUAL, bhat[i][j],NULL);			
@@ -309,7 +309,7 @@ int main(int argc, char *argv[])
 		//writeRawResults(k, optimstatus, sol);
 		//writeLeakFile(k);
 		
-		/* Free model */
+		// Free model
 		GRBfreemodel(model);				
 	}
 	
