@@ -312,9 +312,7 @@ int main(int argc, char *argv[])
 		/* Free model */
 		GRBfreemodel(model);				
 	}
-	printf("\n\t\t\tSeg Fault Tester Numero 1\n\n");
-	ENclose();
-	printf("\n\t\t\tSeg Fault Tester Numero 2\n\n");
+	
 	//writeErrorFile();
 	
 	for(i = 0; i < lengthOfSubPeriod; i++)
@@ -389,6 +387,10 @@ int main(int argc, char *argv[])
 		//free((void *)Ahat[i]);
 	//free((void *)Ahat);
 	
+	
+	printf("\n\t\t\tSeg Fault Tester Numero 1\n\n");
+	ENclose();
+	printf("\n\t\t\tSeg Fault Tester Numero 2\n\n");
 	
 		QUIT:
 
