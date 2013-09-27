@@ -969,7 +969,7 @@ double calculateError(int numNodes, double solution[])
 		for (j = 0; j < numNodes; j++)
 		{
 			singleRunErrors[i][j] = fabs(realLeakValues[j] - 
-				solution[(int)(j + (i * lengthOfSubPeriod))]);
+				solution[(int)(j + (i * totalNodeCount * 3))]);
 			//printf("node %d model error %f \n", (i+1), modelError[i]);
 			errorSum += singleRunErrors[i][j];
 		}
