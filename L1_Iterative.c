@@ -8,6 +8,7 @@
 #include "gurobi_c.h"
 
 #define SECONDS_PER_HOUR 3600
+#define WARMUP_PERIOD 86400
 
 //September 10, 2013
 //L1-Approximation (L1 calculates absolute error, in this case, between
@@ -20,7 +21,7 @@
 //
 //
 double delta = 1, minLeakSize = 1.0, maxLeakSize = 10.0, binaryLeakLimit = 2.0;
-int numOfLeaks = 2, iterations = 1, numOfSubPeriods = 6;
+int numOfLeaks = 2, iterations = 10, numOfSubPeriods = 6;
 char inputFile[50] = "Net3.inp";
 char reportFile[50] = "Net3.rpt";
 char directoryString[50] = "L1_Iterative/";
@@ -611,9 +612,9 @@ int main(int argc, char *argv[])
 		
 		printf("\nSolution Time: %.9f\n", timePerIteration);
 		
-		//writeSummaryFile(k, optimstatus, objval, sol);
-		//writeRawResults(k, optimstatus, sol);
-		//writeLeakFile(k);
+		writeSummaryFile(k, optimstatus, objval, sol);
+		writeRawResults(k, optimstatus, sol);
+		writeLeakFile(k);
 	}
 	
 	
@@ -899,7 +900,7 @@ void populateMatricies(int numNodes)
 		}
 	}
 	
-	for(i = 1; i <= numNodes; i++)
+	for(i = 1; i <= numNodes; i+=4)
 	{		
 		oneLeak(i, delta, numNodes, i-1, lengthOfSubPeriod);		
 	}
@@ -965,10 +966,10 @@ void populateMatricies(int numNodes)
 		}
 	}
 	
-	for (i = 0; i < lengthOfSubPeriod; i++)
-	{
-		writeAhat(i);
-	}
+	//for (i = 0; i < lengthOfSubPeriod; i++)
+	//{
+		//writeAhat(i);
+	//}
 	
 	//Keep track of the emitter coefficient at every network node (most should
 	//	be zero)
@@ -1076,7 +1077,8 @@ void analyzeBaseCase(int nodeCount, int simTime)
 		ENrunH(&t);		
 		// Retrieve hydraulic results for time t
 		//printf("\n\nt = %ld\n\n", t);
-		if (t%hydraulicTimeStep == 0 && currentTime < simTime)
+		//printf("\n\nsimTime = %d\n\n", simTime);
+		if (t%hydraulicTimeStep == 0 && t > 3600 && currentTime < simTime)
 		{
 			for (i=1; i <= nodeCount; i++)
 			{
@@ -1117,7 +1119,7 @@ void oneLeak(int index, double emitterCoeff, int nodeCount, int columnNumber,
 	//Run the hydraulic analysis
 	do {  	
 		ENrunH(&t);		
-		if (t%hydraulicTimeStep == 0 && currentTime < simTime)
+		if (t%hydraulicTimeStep == 0 && t > 3600 && currentTime < simTime)
 		{
 			for (i = 1; i <= nodeCount; i++)
 			{			
@@ -1168,7 +1170,7 @@ void nLeaks(int leakCount, int nodeCount, int simTime)
 	do 
 	{  	
 		ENrunH(&t);
-		if (t%hydraulicTimeStep == 0 && currentTime < simTime)
+		if (t%hydraulicTimeStep == 0 && t > 3600 && currentTime < simTime)
 		{
 			for (i = 1; i <= nodeCount; i++)
 			{			
@@ -1327,10 +1329,11 @@ int writeSummaryFile(int k, int optimstatus, double objval, double sol[])
 //Create an output file for each simulation/optimization run
 int writeRawResults(int k, int optimstatus, double sol[])
 {	
-	char sequentialFile[100], buffer[10];
-	int i; 
+	char sequentialFile[100], buffer[10], name[20];
+	int i, counter;
 	
-	i = 0;	
+	
+	i = counter = 0;	
 	
 	//Create summary CSV file for each set of leaks
 	sequentialFile[0] = '\0';
@@ -1346,13 +1349,28 @@ int writeRawResults(int k, int optimstatus, double sol[])
 	
 	if (optimstatus == GRB_OPTIMAL) 
 	{	
-		for(i = 0; i < ((totalNodeCount * 2) - 1); i++)
-		{		  	
-			fprintf(ptr_file, "  sol[%d] =, %f \n", (i+1), sol[i]);
+		for(i = 0; i < ((totalNodeCount * 1) - 1); i++)
+		{
+			ENgetnodeid(i+1, name);
+			fprintf(ptr_file, "%s,", name);
+			counter = 0;
+			while (counter < lengthOfSubPeriod)
+			{				
+				fprintf(ptr_file, "%f,", sol[i + (counter * (totalNodeCount * 3))]); //((i+1) + (counter * totalNodeCount * 3)), sol[i + (counter * (totalNodeCount * 3))]);
+				counter++;
+			}
+			fprintf(ptr_file, "\n");
 		}
-		for(i = ((totalNodeCount * 2) - 1); i < (totalNodeCount * 2); i++)
-		{		  	
-			fprintf(ptr_file, "  sol[%d] =, %f", (i+1), sol[i]);
+		for(i = ((totalNodeCount * 1) - 1); i < (totalNodeCount * 1); i++)
+		{
+			ENgetnodeid(i+1, name);
+			fprintf(ptr_file, "%s,", name);		  	
+			counter = 0;
+			while (counter < lengthOfSubPeriod)
+			{				
+				fprintf(ptr_file, "%f,", sol[i + (counter * (totalNodeCount * 3))]); //((i+1) + (counter * totalNodeCount * 3)), sol[i + (counter * (totalNodeCount * 3))]);
+				counter++;
+			}
 		}
 	} else if (optimstatus == GRB_INF_OR_UNBD) 
 	{
