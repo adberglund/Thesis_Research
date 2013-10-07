@@ -20,8 +20,8 @@
 //	for number of leaks and number of simulations  
 //
 //
-double delta = 1, minLeakSize = 1.0, maxLeakSize = 10.0, binaryLeakLimit = 2.0;
-int numOfLeaks = 2, iterations = 1, numOfSubPeriods = 6;
+double delta = 1, minLeakSize = 1.0, maxLeakSize = 10.0, binaryLeakLimit;
+int numOfLeaks = 2, iterations = 10, numOfSubPeriods = 6;
 char inputFile[50] = "Net3mod.inp";
 char reportFile[50] = "Net3.rpt";
 char directoryString[50] = "L1_Iterative/";
@@ -51,7 +51,8 @@ void printLeakInfo(int);
 void analyzeBaseCase(int, int);
 void oneLeak(int, double, int, int, int);
 void nLeaks(int, int, int);
-void findHighestMagnitudes(double *);
+void findHighestLPMagnitudes(double *);
+void findHighestMIPMagnitudes(double *);
 double calculateError(int, double[]);
 int writeSummaryFile(int, int, double, double[]);
 int writeRawResults(int, int, double[]);
@@ -108,8 +109,9 @@ int main(int argc, char *argv[])
 	
 	deltas = (double *) calloc(totalNodeCount, sizeof(double));
 	previousDeltas = (double *) calloc(totalNodeCount, sizeof(double));
-	leakGuesses = (double *) calloc((binaryLeakLimit * lengthOfSubPeriod), 
-		sizeof(double));
+
+	//previous location of leakGuesses
+	
 	averageOfSolutions = (double *) calloc(totalNodeCount, sizeof(double));
 	
 	baseCasePressureMatrix = (double **) calloc(lengthOfSubPeriod, 
@@ -311,29 +313,52 @@ int main(int argc, char *argv[])
 		if (error) goto QUIT;
 		
 		error = GRBgetdblattrarray(model, GRB_DBL_ATTR_X, 0, 
-			(totalNodeCount * 2), sol);
+			((totalNodeCount * 2) * lengthOfSubPeriod), sol);
 		if (error) goto QUIT;
-	
+		
+		binaryLeakLimit = 0.0;
+		
+		for (i = 0; i < lengthOfSubPeriod; i++)
+		{
+			for (j = 0; j < totalNodeCount; j++)
+			
+			{
+				if (sol[j + (i * totalNodeCount * 2)] > 0.1)
+					{
+						binaryLeakLimit++;
+					}
+			}
+		}
+		
+		binaryLeakLimit = binaryLeakLimit / lengthOfSubPeriod;
 		averageDelta = averagePreviousDelta = 0.0;
 		
-		findHighestMagnitudes(sol);
+		//printf("binary Leak Limit = %f\n", binaryLeakLimit);
+		//getchar();
 		
-		for (i = 0; i < binaryLeakLimit; i++)
+		leakGuesses = (double *) calloc((binaryLeakLimit * lengthOfSubPeriod), 
+			sizeof(double));
+		
+		findHighestLPMagnitudes(sol);
+		
+		for (i = 0; i < binaryLeakLimit * lengthOfSubPeriod; i++)
 		{
 			averageDelta += leakGuesses[i];
 		}
 		
-		averageDelta = averageDelta / binaryLeakLimit;
+		averageDelta = averageDelta / binaryLeakLimit / lengthOfSubPeriod;
 		
 		for (i = 0; i < totalNodeCount; i++)
 		{
 			previousDeltas[i] = deltas[i];
 			averagePreviousDelta += previousDeltas[i];			
 			deltas[i] = averageDelta;
+			
 			//printf("\t\t\t This is the new delta: %f \n", deltas[i]);
 		}		
 		averagePreviousDelta = averagePreviousDelta / totalNodeCount;
-
+		
+		
 		// Free model 
 		GRBfreemodel(model);
 		
@@ -349,73 +374,73 @@ int main(int argc, char *argv[])
  			if (error) goto QUIT;
  			 	
  			// Add variables 
- 		for (i = 0; i < lengthOfSubPeriod; i++)
- 		{
- 			for (j = 0; j < (totalNodeCount * 2); j++)
+ 			for (i = 0; i < lengthOfSubPeriod; i++)
  			{
- 				obj[j + (totalNodeCount * 3 * i)] = coefficients[j]; 			
- 				vtype[j + (totalNodeCount * 3 * i)] = GRB_CONTINUOUS; 			
+ 				for (j = 0; j < (totalNodeCount * 2); j++)
+ 				{
+ 					obj[j + (totalNodeCount * 3 * i)] = coefficients[j]; 			
+ 					vtype[j + (totalNodeCount * 3 * i)] = GRB_CONTINUOUS; 			
+ 				}
+ 				
+ 				for (j = (totalNodeCount * 2); j < (totalNodeCount * 3); j++)
+ 				{
+ 					obj[j + (totalNodeCount * 3 * i)] = 0.0;
+ 					vtype[j + (totalNodeCount * 3 * i)] = GRB_BINARY;
+ 				}
  			}
+ 		
+ 			//printf("\n\n\nTEST PRINT STATEMENT > 9000\n\n\n");
  			
- 			for (j = (totalNodeCount * 2); j < (totalNodeCount * 3); j++)
- 			{
- 				obj[j + (totalNodeCount * 3 * i)] = 0.0;
- 				vtype[j + (totalNodeCount * 3 * i)] = GRB_BINARY;
- 			}
- 		}
- 		
- 		printf("\n\n\nTEST PRINT STATEMENT > 9000\n\n\n");
- 		
-		error = GRBaddvars(model, (int)((totalNodeCount * 3) * lengthOfSubPeriod),
-			0, NULL, NULL, NULL, obj, NULL, NULL, vtype, NULL);
-		if (error) goto QUIT;
-		
-		// Integrate new variables		
-		error = GRBupdatemodel(model);
-		if (error) goto QUIT;
-				
-		// First constraint: Ax <= b
-		for (i = 0; i < lengthOfSubPeriod; i++)
-		{
-			for (j = 0; j < (totalNodeCount * 2); j++)
+			error = GRBaddvars(model, (int)((totalNodeCount * 3) * lengthOfSubPeriod),
+				0, NULL, NULL, NULL, obj, NULL, NULL, vtype, NULL);
+			if (error) goto QUIT;
+			
+			// Integrate new variables		
+			error = GRBupdatemodel(model);
+			if (error) goto QUIT;
+					
+			// First constraint: Ax <= b
+			for (i = 0; i < lengthOfSubPeriod; i++)
 			{
-				for (l = 0; l < (totalNodeCount * 2); l++)
+				for (j = 0; j < (totalNodeCount * 2); j++)
 				{
-					ind[l] = l + (i * (totalNodeCount * 3));
-					val[l] = Ahat[i][j][l];				
-				}								
-				error = GRBaddconstr(model, (totalNodeCount * 2), ind, val, 
-					GRB_LESS_EQUAL, bhat[i][j],NULL);			
-				if (error) goto QUIT;
+					for (l = 0; l < (totalNodeCount * 2); l++)
+					{
+						ind[l] = l + (i * (totalNodeCount * 3));
+						val[l] = Ahat[i][j][l];				
+					}								
+					error = GRBaddconstr(model, (totalNodeCount * 2), ind, val, 
+						GRB_LESS_EQUAL, bhat[i][j],NULL);			
+					if (error) goto QUIT;
+				}
 			}
-		}
-		
-		//Leak magnitude - (binary * bigM) <= 0
-		for (i = 0; i < lengthOfSubPeriod; i++)
-		{
-			for (j = (totalNodeCount * 2); j < (totalNodeCount * 3); j++)
-			{		
-				ind[0] = (j - (totalNodeCount * 2)) + (i * totalNodeCount * 3); 	ind[1] = j + (i * totalNodeCount * 3); 
-				val[0] = 1.0; 		val[1] = -bigM ;
-										
-				error = GRBaddconstr(model, 2, ind, val, GRB_LESS_EQUAL,0.0,NULL);
-				if (error) goto QUIT;
+			
+			//Leak magnitude - (binary * bigM) <= 0
+			for (i = 0; i < lengthOfSubPeriod; i++)
+			{
+				for (j = (totalNodeCount * 2); j < (totalNodeCount * 3); j++)
+				{		
+					ind[0] = (j - (totalNodeCount * 2)) + (i * totalNodeCount * 3); 	ind[1] = j + (i * totalNodeCount * 3); 
+					val[0] = 1.0; 		val[1] = -bigM ;
+											
+					error = GRBaddconstr(model, 2, ind, val, GRB_LESS_EQUAL,0.0,NULL);
+					if (error) goto QUIT;
+				}
 			}
-		}
-		
-		// Limit sum of binaries to number of leaks searching for...
-		for (i = 0; i < lengthOfSubPeriod; i++)
-		{		
-			for (j = (totalNodeCount * 2); j < (totalNodeCount * 3); j++)
+			
+			// Limit sum of binaries to number of leaks searching for...
+			for (i = 0; i < lengthOfSubPeriod; i++)
 			{		
-				ind[j-(totalNodeCount * 2)] = j + (i * totalNodeCount * 3);
-				val[j-(totalNodeCount * 2)] = 1.0;
+				for (j = (totalNodeCount * 2); j < (totalNodeCount * 3); j++)
+				{		
+					ind[j-(totalNodeCount * 2)] = j + (i * totalNodeCount * 3);
+					val[j-(totalNodeCount * 2)] = 1.0;
+				}	
+			
+				error = GRBaddconstr(model, totalNodeCount, ind, val, GRB_LESS_EQUAL,
+					binaryLeakLimit, NULL);
+				if (error) goto QUIT;	
 			}	
-		
-			error = GRBaddconstr(model, totalNodeCount, ind, val, GRB_LESS_EQUAL,
-				binaryLeakLimit, NULL);
-			if (error) goto QUIT;	
-		}	
         	
 			error = GRBoptimize(model);
 			if (error) goto QUIT;	
@@ -433,17 +458,17 @@ int main(int argc, char *argv[])
 				((totalNodeCount * 3) * lengthOfSubPeriod), sol);
 			if (error) goto QUIT;
 			
-			findHighestMagnitudes(sol);	
+			findHighestMIPMagnitudes(sol);	
 			
 			averagePreviousDelta = averageDelta;
 			averageDelta = 0;
 			
-			for (i = 0; i < binaryLeakLimit; i++)
+			for (i = 0; i < binaryLeakLimit * lengthOfSubPeriod; i++)
 			{
 				averageDelta += leakGuesses[i];
 			}
 			
-			averageDelta = averageDelta / binaryLeakLimit;
+			averageDelta = averageDelta / binaryLeakLimit / lengthOfSubPeriod;
 							
 			for (i = 0; i < totalNodeCount; i++)
 			{
@@ -904,7 +929,7 @@ void populateMatricies(int numNodes)
 		}
 	}
 	
-	for(i = 1; i <= numNodes; i+=4)
+	for(i = 1; i <= numNodes; i++)
 	{		
 		oneLeak(i, delta, numNodes, i-1, lengthOfSubPeriod);		
 	}
@@ -1212,15 +1237,71 @@ void nLeaks(int leakCount, int nodeCount, int simTime)
 
 //FUNCTION
 //Find the n highest leak magnitudes in the current solution
-void findHighestMagnitudes(double *solutions)
+void findHighestLPMagnitudes(double *solutions)
 {
-	int i,j,k, placeHolder;
+	int i,j,k,l, placeHolder;
 	
 	for (i = 0; i < (binaryLeakLimit * lengthOfSubPeriod); i++)
 	{
 		leakGuesses[i] = 0.0;
 	}
-	
+	//printf("size of solutions = %d\n",sizeof(solutions));
+	//printf("size of sol[] = %f\n",sizeof(solutions) / sizeof(solutions[0]) / lengthOfSubPeriod / totalNodeCount);
+	//getchar();
+	//if (sizeof(solutions) / sizeof(solutions[0]) / lengthOfSubPeriod / totalNodeCount == 2)
+	//{
+	for (i = 0; i < (binaryLeakLimit * lengthOfSubPeriod); i++)
+	{	
+		for (j = 0; j < lengthOfSubPeriod; j++)
+		{
+			for (k = 0; k < totalNodeCount; k++)
+			{
+				placeHolder = 0;				
+				if(solutions[k + (j * totalNodeCount * 2)] > leakGuesses[i])
+				{
+					for(l = 0; l < (binaryLeakLimit * lengthOfSubPeriod); l++)
+					{
+						if(solutions[k + (j * totalNodeCount * 2)] == leakGuesses[l])
+							placeHolder++;
+					}
+					if (placeHolder == 0)
+						leakGuesses[i] = solutions[k + (j * totalNodeCount * 2)];
+				}
+			}
+		}
+	}
+	//}
+	/*
+	if (sizeof(solutions) / sizeof(solutions[0]) / lengthOfSubPeriod / totalNodeCount == 3)
+	{
+		for (i = 0; i < (binaryLeakLimit * lengthOfSubPeriod); i++)
+		{	
+			for (j = 0; j < lengthOfSubPeriod; j++)
+			{
+				for (k = 0; k < totalNodeCount; k++)
+				{
+					placeHolder = 0;				
+					if(solutions[k + (j * totalNodeCount * 3)] > leakGuesses[i])
+					{
+						for(l = 0; l < (binaryLeakLimit * lengthOfSubPeriod); l++)
+						{
+							if(solutions[k + (j * totalNodeCount * 3)] == leakGuesses[l])
+								placeHolder++;
+						}
+						if (placeHolder == 0)
+							leakGuesses[i] = solutions[k + (j * totalNodeCount * 3)];
+					}
+				}
+			}
+		}
+	}
+	*/
+	//for (i = 0; i < (binaryLeakLimit * lengthOfSubPeriod); i++)
+	//{
+		//printf("leakGuesses[%d] = %f\n", i, leakGuesses[i]);
+	//}
+	//getchar();
+	/*
 	for (i = 0; i < (binaryLeakLimit * lengthOfSubPeriod); i++)
 	{	
 		for (j = 0; j < (totalNodeCount * lengthOfSubPeriod); j++)
@@ -1238,6 +1319,64 @@ void findHighestMagnitudes(double *solutions)
 			}
 		}
 	}
+	*/
+}
+
+void findHighestMIPMagnitudes(double *solutions)
+{
+	int i,j,k,l, placeHolder;
+	
+	for (i = 0; i < (binaryLeakLimit * lengthOfSubPeriod); i++)
+	{
+		leakGuesses[i] = 0.0;
+	}
+	
+	for (i = 0; i < (binaryLeakLimit * lengthOfSubPeriod); i++)
+	{	
+		for (j = 0; j < lengthOfSubPeriod; j++)
+		{
+			for (k = 0; k < totalNodeCount; k++)
+			{
+				placeHolder = 0;				
+				if(solutions[k + (j * totalNodeCount * 3)] > leakGuesses[i])
+				{
+					for(l = 0; l < (binaryLeakLimit * lengthOfSubPeriod); l++)
+					{
+						if(solutions[k + (j * totalNodeCount * 3)] == leakGuesses[l])
+							placeHolder++;
+					}
+					if (placeHolder == 0)
+						leakGuesses[i] = solutions[k + (j * totalNodeCount * 3)];
+				}
+			}
+		}
+	}
+
+	
+	//for (i = 0; i < (binaryLeakLimit * lengthOfSubPeriod); i++)
+	//{
+		//printf("leakGuesses[%d] = %f\n", i, leakGuesses[i]);
+	//}
+	//getchar();
+	/*
+	for (i = 0; i < (binaryLeakLimit * lengthOfSubPeriod); i++)
+	{	
+		for (j = 0; j < (totalNodeCount * lengthOfSubPeriod); j++)
+		{
+			placeHolder = 0;				
+			if(solutions[j] > leakGuesses[i])
+			{
+				for(k = 0; k < (binaryLeakLimit * lengthOfSubPeriod); k++)
+				{
+					if(solutions[j] == leakGuesses[k])
+						placeHolder++;
+				}
+				if (placeHolder == 0)
+					leakGuesses[i] = solutions[j];
+			}
+		}
+	}
+	*/
 }
 
 //FUNCTION
