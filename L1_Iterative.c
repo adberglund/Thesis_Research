@@ -21,8 +21,8 @@
 //
 //
 double delta = 1, minLeakSize = 1.0, maxLeakSize = 10.0, binaryLeakLimit = 2.0;
-int numOfLeaks = 2, iterations = 10, numOfSubPeriods = 6;
-char inputFile[50] = "Net3.inp";
+int numOfLeaks = 2, iterations = 1, numOfSubPeriods = 6;
+char inputFile[50] = "Net3mod.inp";
 char reportFile[50] = "Net3.rpt";
 char directoryString[50] = "L1_Iterative/";
 //
@@ -87,6 +87,10 @@ int main(int argc, char *argv[])
 	
 	ENgettimeparam(EN_DURATION, &simDuration);
 	
+	//printf("sim Duration = %ld\n\n", simDuration);
+	simDuration = simDuration - WARMUP_PERIOD;
+	//printf("sim Duration = %ld\n\n", simDuration);
+	//getchar();
 	if (simDuration > 0)
 	{
 		lengthOfSubPeriod = (double)(simDuration / (SECONDS_PER_HOUR * numOfSubPeriods));
@@ -1076,10 +1080,12 @@ void analyzeBaseCase(int nodeCount, int simTime)
 	{  		
 		ENrunH(&t);		
 		// Retrieve hydraulic results for time t
-		//printf("\n\nt = %ld\n\n", t);
+		//printf("\n\nt = %ld\n", t/3600);
 		//printf("\n\nsimTime = %d\n\n", simTime);
-		if (t%hydraulicTimeStep == 0 && t > 3600 && currentTime < simTime)
+		if (t%hydraulicTimeStep == 0 && t > WARMUP_PERIOD
+			&& currentTime < simTime)
 		{
+			//printf("time inside if = %ld\n", t/3600);
 			for (i=1; i <= nodeCount; i++)
 			{
 				ENgetnodevalue(i, EN_PRESSURE, &pressure);
@@ -1118,8 +1124,9 @@ void oneLeak(int index, double emitterCoeff, int nodeCount, int columnNumber,
 
 	//Run the hydraulic analysis
 	do {  	
-		ENrunH(&t);		
-		if (t%hydraulicTimeStep == 0 && t > 3600 && currentTime < simTime)
+		ENrunH(&t);				
+		if (t%hydraulicTimeStep == 0 && t > WARMUP_PERIOD
+			&& currentTime < simTime)
 		{
 			for (i = 1; i <= nodeCount; i++)
 			{			
@@ -1170,7 +1177,8 @@ void nLeaks(int leakCount, int nodeCount, int simTime)
 	do 
 	{  	
 		ENrunH(&t);
-		if (t%hydraulicTimeStep == 0 && t > 3600 && currentTime < simTime)
+		if (t%hydraulicTimeStep == 0 && t > WARMUP_PERIOD
+			&& currentTime < simTime)
 		{
 			for (i = 1; i <= nodeCount; i++)
 			{			
