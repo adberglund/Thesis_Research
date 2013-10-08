@@ -8,7 +8,8 @@
 #include "gurobi_c.h"
 
 #define SECONDS_PER_HOUR 3600
-#define WARMUP_PERIOD 86400
+#define SECONDS_PER_DAY 86400
+#define WARMUP_PERIOD 3600//86400
 
 //September 10, 2013
 //L1-Approximation (L1 calculates absolute error, in this case, between
@@ -21,8 +22,8 @@
 //
 //
 double delta = 1, minLeakSize = 1.0, maxLeakSize = 10.0, binaryLeakLimit;
-int numOfLeaks = 2, iterations = 10, numOfSubPeriods = 6;
-char inputFile[50] = "Net3mod.inp";
+int numOfLeaks = 2, iterations = 1, numOfSubPeriods = 6;
+char inputFile[50] = "Net3.inp";
 char reportFile[50] = "Net3.rpt";
 char directoryString[50] = "L1_Iterative/";
 //
@@ -31,7 +32,7 @@ char directoryString[50] = "L1_Iterative/";
 char globalDirName[100];
 int totalNodeCount, EPANETsimCounter;
 int *leakNodes;
-double totalDemand, averageDelta, averagePreviousDelta, bigM = 9999999999.99,
+double totalDemand, averageDelta, averagePreviousDelta, bigM = 999999999.99, 
 	totalTime, timePerIteration, lengthOfSubPeriod;
 double **baseCasePressureMatrix, **observedPressure, *coefficients, **b, 
 	**bhat, *realLeakValues, **singleRunErrors, **leakDemands, *leakMagnitudes, 
@@ -89,7 +90,7 @@ int main(int argc, char *argv[])
 	ENgettimeparam(EN_DURATION, &simDuration);
 	
 	//printf("sim Duration = %ld\n\n", simDuration);
-	simDuration = simDuration - WARMUP_PERIOD;
+	simDuration = simDuration - (WARMUP_PERIOD * 24);
 	//printf("sim Duration = %ld\n\n", simDuration);
 	//getchar();
 	if (simDuration > 0)
@@ -323,7 +324,7 @@ int main(int argc, char *argv[])
 			for (j = 0; j < totalNodeCount; j++)
 			
 			{
-				if (sol[j + (i * totalNodeCount * 2)] > 0.1)
+				if (sol[j + (i * totalNodeCount * 2)] > 0.5)
 					{
 						binaryLeakLimit++;
 					}
@@ -331,21 +332,21 @@ int main(int argc, char *argv[])
 		}
 		
 		binaryLeakLimit = binaryLeakLimit / lengthOfSubPeriod;
+		binaryLeakLimit = rint(binaryLeakLimit);
 		averageDelta = averagePreviousDelta = 0.0;
-		
+		//binaryLeakLimit = 2.0;
 		//printf("binary Leak Limit = %f\n", binaryLeakLimit);
 		//getchar();
 		
-		leakGuesses = (double *) calloc((binaryLeakLimit * lengthOfSubPeriod), 
-			sizeof(double));
+		leakGuesses = (double *) calloc(binaryLeakLimit * lengthOfSubPeriod, sizeof(double));
 		
 		findHighestLPMagnitudes(sol);
 		
 		for (i = 0; i < binaryLeakLimit * lengthOfSubPeriod; i++)
-		{
+		{			
 			averageDelta += leakGuesses[i];
 		}
-		
+	
 		averageDelta = averageDelta / binaryLeakLimit / lengthOfSubPeriod;
 		
 		for (i = 0; i < totalNodeCount; i++)
@@ -358,7 +359,7 @@ int main(int argc, char *argv[])
 		}		
 		averagePreviousDelta = averagePreviousDelta / totalNodeCount;
 		
-		
+		printf("binary Leak Limit = %f \t averageDelta = %f\n", binaryLeakLimit, averageDelta);
 		// Free model 
 		GRBfreemodel(model);
 		
@@ -388,8 +389,6 @@ int main(int argc, char *argv[])
  					vtype[j + (totalNodeCount * 3 * i)] = GRB_BINARY;
  				}
  			}
- 		
- 			//printf("\n\n\nTEST PRINT STATEMENT > 9000\n\n\n");
  			
 			error = GRBaddvars(model, (int)((totalNodeCount * 3) * lengthOfSubPeriod),
 				0, NULL, NULL, NULL, obj, NULL, NULL, vtype, NULL);
@@ -420,13 +419,17 @@ int main(int argc, char *argv[])
 			{
 				for (j = (totalNodeCount * 2); j < (totalNodeCount * 3); j++)
 				{		
-					ind[0] = (j - (totalNodeCount * 2)) + (i * totalNodeCount * 3); 	ind[1] = j + (i * totalNodeCount * 3); 
-					val[0] = 1.0; 		val[1] = -bigM ;
+					ind[0] = (j - (totalNodeCount * 2)) + (i * totalNodeCount * 3);
+					ind[1] = j + (i * totalNodeCount * 3); 
+					val[0] = 1.0; 		
+					val[1] = -bigM ;
 											
 					error = GRBaddconstr(model, 2, ind, val, GRB_LESS_EQUAL,0.0,NULL);
 					if (error) goto QUIT;
 				}
 			}
+			
+			printf("\n\n\nTEST PRINT STATEMENT > 9000\n\n\n binaryLeakLimit = %f\n\n",binaryLeakLimit);
 			
 			// Limit sum of binaries to number of leaks searching for...
 			for (i = 0; i < lengthOfSubPeriod; i++)
@@ -648,7 +651,7 @@ int main(int argc, char *argv[])
 	
 	
 	
-	//writeErrorFile();
+	writeErrorFile();
 	
 	/*
 	for (i = 0; i < totalNodeCount; i++) 
@@ -931,7 +934,7 @@ void populateMatricies(int numNodes)
 	
 	for(i = 1; i <= numNodes; i++)
 	{		
-		oneLeak(i, delta, numNodes, i-1, lengthOfSubPeriod);		
+		oneLeak(i, deltas[i-1], numNodes, i-1, lengthOfSubPeriod);		
 	}
 	
 	//Update A matrix	
@@ -1270,6 +1273,10 @@ void findHighestLPMagnitudes(double *solutions)
 			}
 		}
 	}
+	//for (i = 0; i < (binaryLeakLimit * lengthOfSubPeriod); i++)
+	//{
+		//printf("leakGuesses LP[%d] = %f\n", i, leakGuesses[i]);
+	//}
 	//}
 	/*
 	if (sizeof(solutions) / sizeof(solutions[0]) / lengthOfSubPeriod / totalNodeCount == 3)
@@ -1409,11 +1416,11 @@ double calculateError(int numNodes, double solution[])
 //Create an output file for each simulation/optimization run
 int writeSummaryFile(int k, int optimstatus, double objval, double sol[])
 {	
-	/*
-	char sequentialFile[100], buffer[10], name[10];
-	int i; 
 	
-	i = 0;	
+	char sequentialFile[100], buffer[10], name[10];
+	int i, j; 
+	
+	i = j = 0;	
 	
 	//Create summary CSV file for each set of leaks
 	sequentialFile[0] = '\0';
@@ -1434,30 +1441,68 @@ int writeSummaryFile(int k, int optimstatus, double objval, double sol[])
 			i, leakNodes[i], name, leakMagnitudes[i] );										
 	}
 	
-	fprintf(ptr_file, "Delta:,%2.2f \n",delta);
-	fprintf(ptr_file, "Total Demand: %f \n", totalDemand);
-	fprintf(ptr_file, "Run #, %d, Model Error:, %f \n", (k + 1), modelError[k]);
-	
-	for (i = 0; i < numOfLeaks; i++)
-	{
-		fprintf(ptr_file, "Leak %d demand:, %f, Demand Fraction:, %f, %% \n",
-			i, leakDemands[i], ((leakDemands[i]/totalDemand)* 100));
-	}
+	fprintf(ptr_file, "\nDelta:,%2.2f, binaryLeakLimit, %2.2f \n",delta, binaryLeakLimit);
 	fprintf(ptr_file, "Time To Solution:, %f, seconds\n", timePerIteration);
+	fprintf(ptr_file, "Run #, %d, Model Error:, %f \n\n", k, modelError[k]);
+	fprintf(ptr_file, "Total Demand: %f \n\n Time,", totalDemand);
+	
+	for (i = 1; i <= numOfLeaks; i++)
+		{
+			fprintf(ptr_file, "Leak %d Demand,Demand Fraction,", i);
+		}
+	fprintf(ptr_file, "\n");
+	
+	for (i = 0; i < lengthOfSubPeriod; i++)
+	{
+		fprintf(ptr_file, "%d,", i + 1);
+		for (j = 0; j < numOfLeaks; j++)
+		{
+			fprintf(ptr_file, "%f, %f %%,",
+				leakDemands[i][j], ((leakDemands[i][j]/totalDemand)* 100));
+		}
+		fprintf(ptr_file, "\n");
+	}
 	
 	fprintf(ptr_file, "\nOptimization complete\n");
 	if (optimstatus == GRB_OPTIMAL) 
 	{
-		fprintf(ptr_file, "Optimal objective:, %.4e\n", objval);
-		for(i = 0; i < (totalNodeCount * 2); i++)
-		{		  	
-			fprintf(ptr_file, "  sol[%d] =, %f \n", (i+1), sol[i]);
+		fprintf(ptr_file, "Optimal objective:, %.4e\n\n", objval);
+		for(i = 0; i < (totalNodeCount); i++)
+		{
+			ENgetnodeid(i + 1, name);
+			fprintf(ptr_file, "sol[%d] Node ID: %s,", (i + 1), name);		  	
+			for (j = 0; j < lengthOfSubPeriod; j++)
+			{
+				fprintf(ptr_file, "%f,", sol[i + (j * totalNodeCount)]);
+			}
+			fprintf(ptr_file, "\n");
+			
+			//fprintf(ptr_file, "Node ID:, %s\n", name); 
+		}
+		for(i = totalNodeCount; i < (totalNodeCount * 2); i++)
+		{
+			fprintf(ptr_file, "sol[%d] =,", (i + 1));		  	
+			for (j = 0; j < lengthOfSubPeriod; j++)
+			{
+				fprintf(ptr_file, "%f,", sol[i + (j * totalNodeCount * 3)]);
+			}
+			fprintf(ptr_file, "\n");
 		}
 		for(i = (totalNodeCount * 2); i < (totalNodeCount * 3); i++)
-		{		  	
-			fprintf(ptr_file, "sol[%d] =, %f, binary for, sol[%d] \n",
-				((int)(i+1)), sol[i], ((i - (totalNodeCount * 2) + 1)));
+		{
+			fprintf(ptr_file, "sol[%d] =,", (i + 1));		  	
+			for (j = 0; j < lengthOfSubPeriod; j++)
+			{
+				fprintf(ptr_file, "%f,", sol[i + (j * totalNodeCount * 3)]);
+			}
+			fprintf(ptr_file, "binary for, sol[%d] \n", (i - (totalNodeCount * 2) + 1));			
 		}
+		
+		//for(i = (totalNodeCount * 2); i < (totalNodeCount * 3); i++)
+		//{		  	
+			//fprintf(ptr_file, "sol[%d] =, %f, binary for, sol[%d] \n",
+				//((int)(i+1)), sol[i], ((i - (totalNodeCount * 2) + 1)));
+		//}
 	} else if (optimstatus == GRB_INF_OR_UNBD) 
 	{
 		fprintf(ptr_file, "Model is infeasible or unbounded\n");
@@ -1467,7 +1512,7 @@ int writeSummaryFile(int k, int optimstatus, double objval, double sol[])
 	}
 	
 	fclose(ptr_file);
-	*/
+	
 	return 0;
 }
 
