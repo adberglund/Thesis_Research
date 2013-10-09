@@ -23,7 +23,7 @@
 //
 double delta = 1, minLeakSize = 1.0, maxLeakSize = 10.0;
 int numOfLeaks = 2, iterations = 1, numOfSubPeriods = 6;
-char inputFile[50] = "Micropolis.inp";
+char inputFile[50] = "Net3.inp";
 char reportFile[50] = "Net3.rpt";
 char directoryString[50] = "L1_LP/";
 //
@@ -552,7 +552,7 @@ void populateMatricies(int numNodes)
 	//}
 	
 	
-	for(i = 1; i <= numNodes; i+=20)
+	for(i = 1; i <= numNodes; i++)
 	{	
 		printf("Pressure Sensor # %d\n", i);
 		oneLeak(i, delta, numNodes, i-1, lengthOfSubPeriod);		
