@@ -9,7 +9,7 @@
 
 #define SECONDS_PER_HOUR 3600
 #define SECONDS_PER_DAY 86400
-#define WARMUP_PERIOD 3600//86400
+#define WARMUP_PERIOD 86400
 
 //September 10, 2013
 //L1-Approximation (L1 calculates absolute error, in this case, between
@@ -21,7 +21,7 @@
 //	for number of leaks and number of simulations  
 //
 //
-double delta = 1, minLeakSize = 1.0, maxLeakSize = 10.0, binaryLeakLimit;
+double delta = 1, minLeakSize = 10.0, maxLeakSize = 100.0, LPLeakSearchLimit = 5.0, binaryLeakLimit;
 int numOfLeaks = 2, iterations = 1, numOfSubPeriods = 6;
 char inputFile[50] = "Net3.inp";
 char reportFile[50] = "Net3.rpt";
@@ -32,7 +32,7 @@ char directoryString[50] = "L1_Iterative/";
 char globalDirName[100];
 int totalNodeCount, EPANETsimCounter;
 int *leakNodes;
-double totalDemand, averageDelta, averagePreviousDelta, bigM = 999999999.99, 
+double totalDemand, averageDelta, averagePreviousDelta, bigM = 9999999.99, 
 	totalTime, timePerIteration, lengthOfSubPeriod;
 double **baseCasePressureMatrix, **observedPressure, *coefficients, **b, 
 	**bhat, *realLeakValues, **singleRunErrors, **leakDemands, *leakMagnitudes, 
@@ -90,7 +90,7 @@ int main(int argc, char *argv[])
 	ENgettimeparam(EN_DURATION, &simDuration);
 	
 	//printf("sim Duration = %ld\n\n", simDuration);
-	simDuration = simDuration - (WARMUP_PERIOD * 24);
+	simDuration = simDuration - (SECONDS_PER_DAY);
 	//printf("sim Duration = %ld\n\n", simDuration);
 	//getchar();
 	if (simDuration > 0)
@@ -324,7 +324,7 @@ int main(int argc, char *argv[])
 			for (j = 0; j < totalNodeCount; j++)
 			
 			{
-				if (sol[j + (i * totalNodeCount * 2)] > 0.5)
+				if (sol[j + (i * totalNodeCount * 2)] > LPLeakSearchLimit)
 					{
 						binaryLeakLimit++;
 					}
@@ -347,7 +347,7 @@ int main(int argc, char *argv[])
 			averageDelta += leakGuesses[i];
 		}
 	
-		averageDelta = averageDelta / binaryLeakLimit / lengthOfSubPeriod;
+		averageDelta = averageDelta / (binaryLeakLimit * lengthOfSubPeriod);
 		
 		for (i = 0; i < totalNodeCount; i++)
 		{
@@ -360,6 +360,7 @@ int main(int argc, char *argv[])
 		averagePreviousDelta = averagePreviousDelta / totalNodeCount;
 		
 		printf("binary Leak Limit = %f \t averageDelta = %f\n", binaryLeakLimit, averageDelta);
+		
 		// Free model 
 		GRBfreemodel(model);
 		
@@ -471,7 +472,7 @@ int main(int argc, char *argv[])
 				averageDelta += leakGuesses[i];
 			}
 			
-			averageDelta = averageDelta / binaryLeakLimit / lengthOfSubPeriod;
+			averageDelta = averageDelta / (binaryLeakLimit * lengthOfSubPeriod);
 							
 			for (i = 0; i < totalNodeCount; i++)
 			{
@@ -566,8 +567,10 @@ int main(int argc, char *argv[])
 			{
 				for (j = (totalNodeCount * 2); j < (totalNodeCount * 3); j++)
 				{		
-					ind[0] = (j - (totalNodeCount * 2)) + (i * totalNodeCount * 3); 	ind[1] = j + (i * totalNodeCount * 3); 
-					val[0] = 1.0; 		val[1] = -bigM ;
+					ind[0] = (j - (totalNodeCount * 2)) + (i * totalNodeCount * 3); 	
+					ind[1] = j + (i * totalNodeCount * 3); 
+					val[0] = 1.0; 		
+					val[1] = -bigM ;
 											
 					error = GRBaddconstr(model, 2, ind, val, GRB_LESS_EQUAL,0.0,NULL);
 					if (error) goto QUIT;
@@ -925,11 +928,12 @@ void populateMatricies(int numNodes)
 		for (j = 0; j < numNodes; j++)
 		{
 			bhat[i][j] = b[i][j];
+			bhat[i][j + numNodes] = -b[i][j];
 		}
-		for (j = numNodes; j < (numNodes * 2); j++)
-		{
-			bhat[i][j] = -b[i][j-numNodes];
-		}
+		//for (j = numNodes; j < (numNodes * 2); j++)
+		//{
+			//bhat[i][j] = -b[i][j-numNodes];
+		//}
 	}
 	
 	for(i = 1; i <= numNodes; i++)
@@ -947,11 +951,12 @@ void populateMatricies(int numNodes)
 				if (deltas[k] != 0)
 				{
 					largeA[i][j][k] = (baseCasePressureMatrix[i][j] - 
-						largePressureMatrix[i][j][k]) / delta;
+						largePressureMatrix[i][j][k]) / deltas[k];
 				}				
 			}			
 		}
 	}
+	
 		
 	//Create A-hat
 	for (i = 0; i < lengthOfSubPeriod; i++)
@@ -961,6 +966,9 @@ void populateMatricies(int numNodes)
 			for(k = 0; k < numNodes; k++)
 			{
 				Ahat[i][j][k] =  largeA[i][j][k];
+				//Ahat[i][j+numNodes][k] = -largeA[i][j][k];
+				//Ahat[i][j][k+numNodes] = -I[j][k];
+				//Ahat[i][j+numNodes][k+numNodes] = -I[j][k];
 			}
 		}
 	}
@@ -998,10 +1006,10 @@ void populateMatricies(int numNodes)
 		}
 	}
 	
-	//for (i = 0; i < lengthOfSubPeriod; i++)
-	//{
-		//writeAhat(i);
-	//}
+	for (i = 0; i < lengthOfSubPeriod; i++)
+	{
+		writeAhat(i);
+	}
 	
 	//Keep track of the emitter coefficient at every network node (most should
 	//	be zero)
@@ -1273,10 +1281,10 @@ void findHighestLPMagnitudes(double *solutions)
 			}
 		}
 	}
-	//for (i = 0; i < (binaryLeakLimit * lengthOfSubPeriod); i++)
-	//{
-		//printf("leakGuesses LP[%d] = %f\n", i, leakGuesses[i]);
-	//}
+	for (i = 0; i < (binaryLeakLimit * lengthOfSubPeriod); i++)
+	{
+		printf("leakGuesses LP[%d] = %f\n", i, leakGuesses[i]);
+	}
 	//}
 	/*
 	if (sizeof(solutions) / sizeof(solutions[0]) / lengthOfSubPeriod / totalNodeCount == 3)
@@ -1360,10 +1368,10 @@ void findHighestMIPMagnitudes(double *solutions)
 	}
 
 	
-	//for (i = 0; i < (binaryLeakLimit * lengthOfSubPeriod); i++)
-	//{
-		//printf("leakGuesses[%d] = %f\n", i, leakGuesses[i]);
-	//}
+	for (i = 0; i < (binaryLeakLimit * lengthOfSubPeriod); i++)
+	{
+		printf("leakGuesses[%d] = %f\n", i, leakGuesses[i]);
+	}
 	//getchar();
 	/*
 	for (i = 0; i < (binaryLeakLimit * lengthOfSubPeriod); i++)
@@ -1473,7 +1481,7 @@ int writeSummaryFile(int k, int optimstatus, double objval, double sol[])
 			fprintf(ptr_file, "sol[%d] Node ID: %s,", (i + 1), name);		  	
 			for (j = 0; j < lengthOfSubPeriod; j++)
 			{
-				fprintf(ptr_file, "%f,", sol[i + (j * totalNodeCount)]);
+				fprintf(ptr_file, "%f,", sol[i + (j * totalNodeCount * 3)]);
 			}
 			fprintf(ptr_file, "\n");
 			

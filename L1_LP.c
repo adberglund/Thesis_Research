@@ -8,6 +8,8 @@
 #include "gurobi_c.h"
 
 #define SECONDS_PER_HOUR 3600
+#define SECONDS_PER_DAY 86400
+#define WARMUP_PERIOD 86400
 
 //September 10, 2013
 //L1-Approximation (L1 calculates absolute error, in this case, between
@@ -21,7 +23,7 @@
 //
 double delta = 1, minLeakSize = 1.0, maxLeakSize = 10.0;
 int numOfLeaks = 2, iterations = 1, numOfSubPeriods = 6;
-char inputFile[50] = "Net3.inp";
+char inputFile[50] = "Micropolis.inp";
 char reportFile[50] = "Net3.rpt";
 char directoryString[50] = "L1_LP/";
 //
@@ -80,6 +82,8 @@ int main(int argc, char *argv[])
 	
 		
 	ENgettimeparam(EN_DURATION, &simDuration);
+	
+	simDuration = simDuration - (SECONDS_PER_DAY);
 	
 	if (simDuration > 0)
 	{
@@ -211,6 +215,8 @@ int main(int argc, char *argv[])
 		printLeakInfo(numOfLeaks);
 		
 		populateMatricies(totalNodeCount);
+		
+		printf("\n\n\t\t\t Beginning LP\n\n");
 		
 		// Create an empty model 		
  		error = GRBnewmodel(env, &model, "L1Approx", 0, NULL, NULL, NULL, NULL, 
@@ -546,8 +552,9 @@ void populateMatricies(int numNodes)
 	//}
 	
 	
-	for(i = 1; i <= numNodes; i++)
-	{		
+	for(i = 1; i <= numNodes; i+=20)
+	{	
+		printf("Pressure Sensor # %d\n", i);
 		oneLeak(i, delta, numNodes, i-1, lengthOfSubPeriod);		
 	}
 	
@@ -745,7 +752,8 @@ void analyzeBaseCase(int nodeCount, int simTime)
 		ENrunH(&t);		
 		// Retrieve hydraulic results for time t
 		//printf("\n\nt = %ld\n\n", t);
-		if (t%hydraulicTimeStep == 0 && currentTime < simTime)
+		if (t%hydraulicTimeStep == 0 && t > WARMUP_PERIOD
+			&& currentTime < simTime)
 		{
 			for (i=1; i <= nodeCount; i++)
 			{
@@ -786,7 +794,8 @@ void oneLeak(int index, double emitterCoeff, int nodeCount, int columnNumber,
 	//Run the hydraulic analysis
 	do {  	
 		ENrunH(&t);		
-		if (t%hydraulicTimeStep == 0 && currentTime < simTime)
+		if (t%hydraulicTimeStep == 0 && t > WARMUP_PERIOD
+			&& currentTime < simTime)
 		{
 			for (i = 1; i <= nodeCount; i++)
 			{			
@@ -837,7 +846,8 @@ void nLeaks(int leakCount, int nodeCount, int simTime)
 	do 
 	{  	
 		ENrunH(&t);
-		if (t%hydraulicTimeStep == 0 && currentTime < simTime)
+		if (t%hydraulicTimeStep == 0 && t > WARMUP_PERIOD
+			&& currentTime < simTime)
 		{
 			for (i = 1; i <= nodeCount; i++)
 			{			

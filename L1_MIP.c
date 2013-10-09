@@ -8,6 +8,8 @@
 #include "gurobi_c.h"
 
 #define SECONDS_PER_HOUR 3600
+#define SECONDS_PER_DAY 86400
+#define WARMUP_PERIOD 86400
 
 //September 10, 2013
 //L1-Approximation (L1 calculates absolute error, in this case, between
@@ -78,6 +80,8 @@ int main(int argc, char *argv[])
 	totalNodeCount = numNodes - storage;
 	
 	ENgettimeparam(EN_DURATION, &simDuration);
+	
+	simDuration = simDuration - (SECONDS_PER_DAY);
 	
 	if (simDuration > 0)
 	{
@@ -293,8 +297,10 @@ int main(int argc, char *argv[])
 		{
 			for (j = (totalNodeCount * 2); j < (totalNodeCount * 3); j++)
 			{		
-				ind[0] = (j - (totalNodeCount * 2)) + (i * totalNodeCount * 3); 	ind[1] = j + (i * totalNodeCount * 3); 
-				val[0] = 1.0; 		val[1] = -bigM ;
+				ind[0] = (j - (totalNodeCount * 2)) + (i * totalNodeCount * 3); 	
+				ind[1] = j + (i * totalNodeCount * 3); 
+				val[0] = 1.0; 		
+				val[1] = -bigM ;
 										
 				error = GRBaddconstr(model, 2, ind, val, GRB_LESS_EQUAL,0.0,NULL);
 				if (error) goto QUIT;
@@ -829,7 +835,8 @@ void analyzeBaseCase(int nodeCount, int simTime)
 		ENrunH(&t);		
 		// Retrieve hydraulic results for time t
 		//printf("\n\nt = %ld\n\n", t);
-		if (t%hydraulicTimeStep == 0 && currentTime < simTime)
+		if (t%hydraulicTimeStep == 0 && t > WARMUP_PERIOD
+			&& currentTime < simTime)
 		{
 			for (i=1; i <= nodeCount; i++)
 			{
@@ -870,7 +877,8 @@ void oneLeak(int index, double emitterCoeff, int nodeCount, int columnNumber,
 	//Run the hydraulic analysis
 	do {  	
 		ENrunH(&t);		
-		if (t%hydraulicTimeStep == 0 && currentTime < simTime)
+		if (t%hydraulicTimeStep == 0 && t > WARMUP_PERIOD
+			&& currentTime < simTime)
 		{
 			for (i = 1; i <= nodeCount; i++)
 			{			
@@ -921,7 +929,8 @@ void nLeaks(int leakCount, int nodeCount, int simTime)
 	do 
 	{  	
 		ENrunH(&t);
-		if (t%hydraulicTimeStep == 0 && currentTime < simTime)
+		if (t%hydraulicTimeStep == 0 && t > WARMUP_PERIOD
+			&& currentTime < simTime)
 		{
 			for (i = 1; i <= nodeCount; i++)
 			{			
