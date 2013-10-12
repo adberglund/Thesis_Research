@@ -8,6 +8,8 @@
 #include "gurobi_c.h"
 
 #define SECONDS_PER_HOUR 3600
+#define SECONDS_PER_DAY 86400
+#define WARMUP_PERIOD 259200
 
 //September 10, 2013
 //L1-Approximation (L1 calculates absolute error, in this case, between
@@ -19,8 +21,8 @@
 //	for number of leaks and number of simulations  
 //
 //
-double delta = 1, minLeakSize = 1.0, maxLeakSize = 10.0, binaryLeakLimit = 2.0;
-int numOfLeaks = 2, iterations = 1, numOfSubPeriods = 6;
+double delta = 1, minLeakSize = 1.0, maxLeakSize = 10.0, binaryLeakLimit = 3.0;
+int numOfLeaks = 2, iterations = 10, numOfSubPeriods = 24;
 char inputFile[50] = "Net3.inp";
 char reportFile[50] = "Net3.rpt";
 char directoryString[50] = "L1_MIP/";
@@ -30,7 +32,7 @@ char directoryString[50] = "L1_MIP/";
 char globalDirName[100];
 int totalNodeCount;
 int *leakNodes;
-double totalDemand, lengthOfSubPeriod, bigM = 999999.99;
+double totalDemand, lengthOfSubPeriod, bigM = 9999999.99;
 double **baseCasePressureMatrix, **observedPressure, *coefficients, **b, **bhat,
 	*realLeakValues, **singleRunErrors, **leakDemands, *leakMagnitudes, 
 	*modelError, ***largePressureMatrix, ***largeA, ***Ahat,  **I, 
@@ -78,10 +80,12 @@ int main(int argc, char *argv[])
 	totalNodeCount = numNodes - storage;
 	
 	ENgettimeparam(EN_DURATION, &simDuration);
+	simDuration = simDuration - (SECONDS_PER_DAY * 3);
 	
 	if (simDuration > 0)
 	{
-		lengthOfSubPeriod = (double)(simDuration / (SECONDS_PER_HOUR * numOfSubPeriods));
+		lengthOfSubPeriod = (double)(simDuration / 
+			(SECONDS_PER_HOUR * numOfSubPeriods));
 	}
 	else lengthOfSubPeriod = 1;
 	
@@ -127,7 +131,7 @@ int main(int argc, char *argv[])
 	realLeakValues = (double *) calloc(totalNodeCount, sizeof(double));
 	
 	
-	singleRunErrors = (double **) calloc(totalNodeCount, sizeof(double *));
+	singleRunErrors = (double **) calloc(lengthOfSubPeriod, sizeof(double *));
 	for (i = 0; i < lengthOfSubPeriod; i++)
 	{
 		singleRunErrors[i] = (double *) calloc(totalNodeCount, sizeof(double));
@@ -293,8 +297,10 @@ int main(int argc, char *argv[])
 		{
 			for (j = (totalNodeCount * 2); j < (totalNodeCount * 3); j++)
 			{		
-				ind[0] = (j - (totalNodeCount * 2)) + (i * totalNodeCount * 3); 	ind[1] = j + (i * totalNodeCount * 3); 
-				val[0] = 1.0; 		val[1] = -bigM ;
+				ind[0] = (j - (totalNodeCount * 2)) + (i * totalNodeCount * 3); 	
+				ind[1] = j + (i * totalNodeCount * 3); 
+				val[0] = 1.0; 		
+				val[1] = -bigM ;
 										
 				error = GRBaddconstr(model, 2, ind, val, GRB_LESS_EQUAL,0.0,NULL);
 				if (error) goto QUIT;
@@ -341,11 +347,11 @@ int main(int argc, char *argv[])
 			printf("Optimal objective: %.4e\n", objval);
 			for (j = 0; j < (totalNodeCount * 3); j++)
 			{
-				printf("  sol[%d, t = 1] = %f \t", (j+1), sol[j]);
-				printf("  sol[%d, t = 2] = %f \t", (j+1), sol[j + (totalNodeCount * 3)]);
-				printf("  sol[%d, t = 3] = %f \t", (j+1), sol[j + 2 * (totalNodeCount * 3)]);
-				printf("  sol[%d, t = 4] = %f \t", (j+1), sol[j + 3 * (totalNodeCount * 3)]);				
-				printf("\n");
+				//printf("  sol[%d, t = 1] = %f \t", (j+1), sol[j]);
+				//printf("  sol[%d, t = 2] = %f \t", (j+1), sol[j + (totalNodeCount * 3)]);
+				//printf("  sol[%d, t = 3] = %f \t", (j+1), sol[j + 2 * (totalNodeCount * 3)]);
+				//printf("  sol[%d, t = 4] = %f \t", (j+1), sol[j + 3 * (totalNodeCount * 3)]);				
+				//printf("\n");
 			}
 			//for(i = 0; i < (totalNodeCount * 2); i++)
 			//{		  	
@@ -368,8 +374,8 @@ int main(int argc, char *argv[])
 		modelError[k] = calculateError(totalNodeCount, sol);		
 		
 		//writeSummaryFile(k, optimstatus, objval, sol);
-		//writeRawResults(k, optimstatus, sol);
-		//writeLeakFile(k);
+		writeRawResults(k, optimstatus, sol);
+		writeLeakFile(k);
 		
 		// Free model
 		GRBfreemodel(model);		
@@ -507,8 +513,7 @@ void initializeArrays()
 	
 	//Array initialization
 	for (i = 0; i < lengthOfSubPeriod; i ++)
-	{
-		realLeakValues[i] = 0.0;
+	{	
 		for (j = 0; j < totalNodeCount; j++)
 		{
 			observedPressure[i][j] = 0;
@@ -516,6 +521,11 @@ void initializeArrays()
 			b[i][j] = 0;
 			singleRunErrors[i][j] = 0.0;
 		}
+	}
+	
+	for (i = 0; i < totalNodeCount; i++)
+	{
+		realLeakValues[i] = 0.0;
 	}
 	
 	for (i = 0; i < lengthOfSubPeriod; i++)
@@ -829,7 +839,8 @@ void analyzeBaseCase(int nodeCount, int simTime)
 		ENrunH(&t);		
 		// Retrieve hydraulic results for time t
 		//printf("\n\nt = %ld\n\n", t);
-		if (t%hydraulicTimeStep == 0 && currentTime < simTime)
+		if (t%hydraulicTimeStep == 0 && t >= WARMUP_PERIOD
+			&& currentTime < simTime)
 		{
 			for (i=1; i <= nodeCount; i++)
 			{
@@ -870,7 +881,8 @@ void oneLeak(int index, double emitterCoeff, int nodeCount, int columnNumber,
 	//Run the hydraulic analysis
 	do {  	
 		ENrunH(&t);		
-		if (t%hydraulicTimeStep == 0 && currentTime < simTime)
+		if (t%hydraulicTimeStep == 0 && t >= WARMUP_PERIOD
+			&& currentTime < simTime)
 		{
 			for (i = 1; i <= nodeCount; i++)
 			{			
@@ -921,7 +933,8 @@ void nLeaks(int leakCount, int nodeCount, int simTime)
 	do 
 	{  	
 		ENrunH(&t);
-		if (t%hydraulicTimeStep == 0 && currentTime < simTime)
+		if (t%hydraulicTimeStep == 0 && t >= WARMUP_PERIOD
+			&& currentTime < simTime)
 		{
 			for (i = 1; i <= nodeCount; i++)
 			{			
@@ -1054,10 +1067,10 @@ int writeSummaryFile(int k, int optimstatus, double objval, double sol[])
 //Create an output file for each simulation/optimization run
 int writeRawResults(int k, int optimstatus, double sol[])
 {	
-	char sequentialFile[100], buffer[10];
-	int i; 
+	char sequentialFile[100], buffer[10], name[20];
+	int i, counter; 
 	
-	i = 0;	
+	i = counter = 0;	
 	
 	//Create summary CSV file for each set of leaks
 	sequentialFile[0] = '\0';
@@ -1072,7 +1085,45 @@ int writeRawResults(int k, int optimstatus, double sol[])
 	ptr_file = fopen(sequentialFile, "w");
 	if (!ptr_file)
 		return 1;	
-	
+
+
+
+
+
+	if (optimstatus == GRB_OPTIMAL) 
+	{	
+		for(i = 0; i < ((totalNodeCount * 1) - 1); i++)
+		{
+			ENgetnodeid(i+1, name);
+			fprintf(ptr_file, "%s,", name);
+			counter = 0;
+			while (counter < lengthOfSubPeriod)
+			{				
+				fprintf(ptr_file, "%f,", sol[i + (counter * (totalNodeCount * 3))]); //((i+1) + (counter * totalNodeCount * 3)), sol[i + (counter * (totalNodeCount * 3))]);
+				counter++;
+			}
+			fprintf(ptr_file, "\n");
+		}
+		for(i = ((totalNodeCount * 1) - 1); i < (totalNodeCount * 1); i++)
+		{
+			ENgetnodeid(i+1, name);
+			fprintf(ptr_file, "%s,", name);		  	
+			counter = 0;
+			while (counter < lengthOfSubPeriod)
+			{				
+				fprintf(ptr_file, "%f,", sol[i + (counter * (totalNodeCount * 3))]); //((i+1) + (counter * totalNodeCount * 3)), sol[i + (counter * (totalNodeCount * 3))]);
+				counter++;
+			}
+		}
+	} else if (optimstatus == GRB_INF_OR_UNBD) 
+	{
+		fprintf(ptr_file, "Model is infeasible or unbounded\n");
+	} else 
+	{
+		fprintf(ptr_file, "Optimization was stopped early\n");
+	}
+
+	/*
 	if (optimstatus == GRB_OPTIMAL) 
 	{	
 		for(i = 0; i < ((totalNodeCount * 2) - 1); i++)
@@ -1090,6 +1141,7 @@ int writeRawResults(int k, int optimstatus, double sol[])
 	{
 		fprintf(ptr_file, "Optimization was stopped early\n");
 	}
+	*/
 	
 	fclose(ptr_file);
 	return 0;

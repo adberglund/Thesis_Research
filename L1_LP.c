@@ -8,6 +8,8 @@
 #include "gurobi_c.h"
 
 #define SECONDS_PER_HOUR 3600
+#define SECONDS_PER_DAY 86400
+#define WARMUP_PERIOD 259200
 
 //September 10, 2013
 //L1-Approximation (L1 calculates absolute error, in this case, between
@@ -81,9 +83,12 @@ int main(int argc, char *argv[])
 		
 	ENgettimeparam(EN_DURATION, &simDuration);
 	
+	simDuration = simDuration - (SECONDS_PER_DAY * 3);
+	
 	if (simDuration > 0)
 	{
-		lengthOfSubPeriod = (double)(simDuration / (SECONDS_PER_HOUR * numOfSubPeriods));
+		lengthOfSubPeriod = (double)(simDuration / 
+			(SECONDS_PER_HOUR * numOfSubPeriods));
 	}
 	else lengthOfSubPeriod = 1;
 	
@@ -128,7 +133,7 @@ int main(int argc, char *argv[])
 	realLeakValues = (double *) calloc(totalNodeCount, sizeof(double));
 	
 	
-	singleRunErrors = (double **) calloc(totalNodeCount, sizeof(double *));
+	singleRunErrors = (double **) calloc(lengthOfSubPeriod, sizeof(double *));
 	for (i = 0; i < lengthOfSubPeriod; i++)
 	{
 		singleRunErrors[i] = (double *) calloc(totalNodeCount, sizeof(double));
@@ -424,7 +429,6 @@ void initializeArrays()
 	//Array initialization
 	for (i = 0; i < lengthOfSubPeriod; i ++)
 	{
-		realLeakValues[i] = 0.0;
 		for (j = 0; j < totalNodeCount; j++)
 		{
 			observedPressure[i][j] = 0;
@@ -432,6 +436,11 @@ void initializeArrays()
 			b[i][j] = 0;
 			singleRunErrors[i][j] = 0.0;
 		}
+	}
+	
+	for (i = 0; i < totalNodeCount; i++)
+	{
+		realLeakValues[i] = 0.0;
 	}
 	
 	for (i = 0; i < lengthOfSubPeriod; i++)
@@ -745,7 +754,8 @@ void analyzeBaseCase(int nodeCount, int simTime)
 		ENrunH(&t);		
 		// Retrieve hydraulic results for time t
 		//printf("\n\nt = %ld\n\n", t);
-		if (t%hydraulicTimeStep == 0 && currentTime < simTime)
+		if (t%hydraulicTimeStep == 0 && t >= WARMUP_PERIOD
+			&& currentTime < simTime)
 		{
 			for (i=1; i <= nodeCount; i++)
 			{
@@ -786,7 +796,8 @@ void oneLeak(int index, double emitterCoeff, int nodeCount, int columnNumber,
 	//Run the hydraulic analysis
 	do {  	
 		ENrunH(&t);		
-		if (t%hydraulicTimeStep == 0 && currentTime < simTime)
+		if (t%hydraulicTimeStep == 0 && t >= WARMUP_PERIOD
+			&& currentTime < simTime)
 		{
 			for (i = 1; i <= nodeCount; i++)
 			{			
@@ -837,7 +848,8 @@ void nLeaks(int leakCount, int nodeCount, int simTime)
 	do 
 	{  	
 		ENrunH(&t);
-		if (t%hydraulicTimeStep == 0 && currentTime < simTime)
+		if (t%hydraulicTimeStep == 0 && t >= WARMUP_PERIOD
+			&& currentTime < simTime)
 		{
 			for (i = 1; i <= nodeCount; i++)
 			{			
