@@ -7,6 +7,10 @@
 #include "epanet2.h" 
 #include "gurobi_c.h"
 
+#define SECONDS_PER_HOUR 3600
+#define SECONDS_PER_DAY 86400
+#define WARMUP_PERIOD 259200
+
 //September 10, 2013
 //L1-Approximation (L1 calculates absolute error, in this case, between
 //	simulated and "observed" scenarios and is being used for linear 
@@ -17,7 +21,7 @@
 //	for number of leaks and number of simulations  
 //
 //
-int numOfLeaks = 2, iterations = 1;
+int numOfLeaks = 2, iterations = 1, numOfTimePoints = 24;
 double delta = 1, minLeakSize = 1.0, maxLeakSize = 10.0;
 char inputFile[50] = "Net3.inp";
 char reportFile[50] = "Net3.rpt";
@@ -56,13 +60,14 @@ int main(int argc, char *argv[])
 	GRBmodel *model = NULL;	
 	int  i, j, k, numNodes, storage, directoryCode;
 	double errorSum;
+	long simDuration;
 	
 	//Randomize the leak locations, commented out will use the same seeding 
 	//for each run
 	//srand(time(NULL));
 	
 	i = j = k = numNodes = 0;
-	errorSum = 0.0;
+	simDuration = 0.0;
 	
 	//Open EPANET & Input file
 	ENopen(inputFile,reportFile,"");
@@ -516,11 +521,16 @@ void analyzeBaseCase(int nodeCount)
 {		
 	long t, tstep, hydraulicTimeStep, duration;
 	float pressure;
-	int i;	
+	int i, currentTime;	
 	//char name[20];
 	
-	i = 0;
+	i = currentTime = 0;
 	pressure = 0.0;
+	
+	for (i=1; i <= nodeCount; i++)
+	{
+		baseCasePressureMatrix[i-1] = 0;
+	}
 	
 	ENgettimeparam( EN_HYDSTEP, &hydraulicTimeStep );
 	ENgettimeparam( EN_DURATION, &duration );
@@ -534,17 +544,28 @@ void analyzeBaseCase(int nodeCount)
 	{  		
 		ENrunH(&t);		
 		// Retrieve hydraulic results for time t
-		for (i=1; i <= nodeCount; i++)
+		if (t%hydraulicTimeStep == 0 && t >= WARMUP_PERIOD
+			&& currentTime < numOfTimePoints)
 		{
-			ENgetnodevalue(i, EN_PRESSURE, &pressure);
-			//ENgetnodeid(i, name);
-			baseCasePressureMatrix[i-1] = pressure;		
+			for (i=1; i <= nodeCount; i++)
+			{
+				ENgetnodevalue(i, EN_PRESSURE, &pressure);
+				//ENgetnodeid(i, name);
+				baseCasePressureMatrix[i-1] += pressure;		
+			}
+			currentTime++;
 		}		
 		ENnextH(&tstep);  	
 	} while (tstep > 0); 
 	
 	//Close the hydraulic solver
-	ENcloseH();  
+	ENcloseH();
+	
+	for (i=1; i <= nodeCount; i++)
+	{
+		baseCasePressureMatrix[i-1] = baseCasePressureMatrix[i-1] 
+			/ numOfTimePoints;
+	}
 }
 
 //FUNCTION
@@ -552,11 +573,11 @@ void analyzeBaseCase(int nodeCount)
 //Determines how many pressure violations occur in the network by leak location
 void oneLeak(int index, double emitterCoeff, int nodeCount, int columnNumber) 
 {	
-	int i;
+	int i, currentTime;
 	long t, tstep, hydraulicTimeStep;
 	float pressure;
 	
-	i = 0;
+	i = currentTime = 0;
 	pressure = 0;
 	
 	ENgettimeparam(EN_HYDSTEP, &hydraulicTimeStep);
@@ -570,13 +591,15 @@ void oneLeak(int index, double emitterCoeff, int nodeCount, int columnNumber)
 	//Run the hydraulic analysis
 	do {  	
 		ENrunH(&t);		
-		if (t%hydraulicTimeStep == 0)
+		if (t%hydraulicTimeStep == 0 && t >= WARMUP_PERIOD
+			&& currentTime < numOfTimePoints)
 		{
 			for (i = 1; i <= nodeCount; i++)
 			{			
 				ENgetnodevalue(i, EN_PRESSURE, &pressure);
-				largePressureMatrix[i-1][columnNumber] = pressure;			
+				largePressureMatrix[i-1][columnNumber] += pressure;			
             }
+            currentTime++;
          }
 		ENnextH(&tstep); 
 	} while (tstep > 0); 
@@ -586,6 +609,12 @@ void oneLeak(int index, double emitterCoeff, int nodeCount, int columnNumber)
 	
 	//"Fix" the leak
 	ENsetnodevalue(index, EN_EMITTER, 0.0);
+	
+	for (i = 1; i <= nodeCount; i++)
+	{					
+		largePressureMatrix[i-1][columnNumber] = 
+			largePressureMatrix[i-1][columnNumber] / numOfTimePoints;			
+	}
 }
 
 //FUNCTION
@@ -594,14 +623,18 @@ void nLeaks(int leakCount, int nodeCount)
 {
 	long t, tstep, hydraulicTimeStep, duration;	
 	float pressure, baseDemand, demand;
-	int i;
+	int i, currentTime;
 	//char name[20];
 
-	i = 0;
+	i = currentTime = 0;
 	totalDemand = pressure = baseDemand = demand = 0.0;
 	
-	ENgettimeparam(EN_HYDSTEP, &hydraulicTimeStep);
+	for (i=1; i <= nodeCount; i++)
+	{
+		observedPressure[i-1] = 0;
+	}
 	
+	ENgettimeparam(EN_HYDSTEP, &hydraulicTimeStep);	
 	ENgettimeparam( EN_DURATION, &duration );
 	
 	//Create the leaks
@@ -618,22 +651,25 @@ void nLeaks(int leakCount, int nodeCount)
 	do 
 	{  	
 		ENrunH(&t);
-		
-		for (i = 1; i <= nodeCount; i++)
-		{			
-			ENgetnodevalue(i, EN_PRESSURE, &pressure);						
-			ENgetnodevalue(i, EN_DEMAND, &demand);												
-			observedPressure[i-1] = (double)pressure;			
-			totalDemand += demand;	
-		}
-		
-		for (i = 0; i < leakCount; i++)
+		if (t%hydraulicTimeStep == 0 && t >= WARMUP_PERIOD
+			&& currentTime < numOfTimePoints)
 		{
-			ENgetnodevalue(leakNodes[i], EN_BASEDEMAND, &baseDemand);					
-			ENgetnodevalue(leakNodes[i], EN_DEMAND, &demand);			
-			leakDemands[i] = (demand - baseDemand);
+			for (i = 1; i <= nodeCount; i++)
+			{			
+				ENgetnodevalue(i, EN_PRESSURE, &pressure);						
+				ENgetnodevalue(i, EN_DEMAND, &demand);												
+				observedPressure[i-1] += (double)pressure;			
+				totalDemand += demand;	
+			}
+			
+			for (i = 0; i < leakCount; i++)
+			{
+				ENgetnodevalue(leakNodes[i], EN_BASEDEMAND, &baseDemand);					
+				ENgetnodevalue(leakNodes[i], EN_DEMAND, &demand);			
+				leakDemands[i] = (demand - baseDemand);
+			}
+			currentTime++;
 		}
-		
 		ENnextH(&tstep); 		
 	} while (tstep > 0); 
 	
@@ -644,7 +680,13 @@ void nLeaks(int leakCount, int nodeCount)
 	for (i = 0; i < leakCount; i++)
 	{
 		ENsetnodevalue(leakNodes[i], EN_EMITTER, 0);
-	}	
+	}
+	
+	for (i=1; i <= nodeCount; i++)
+	{
+		observedPressure[i-1] = observedPressure[i-1] / numOfTimePoints;
+	}
+	
 }
 
 
