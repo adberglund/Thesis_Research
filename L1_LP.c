@@ -23,8 +23,8 @@
 //
 int numOfLeaks = 2, iterations = 1, numOfTimePoints = 24;
 double delta = 1, minLeakSize = 1.0, maxLeakSize = 10.0;
-char inputFile[50] = "Net3.inp";
-char reportFile[50] = "Net3.rpt";
+char inputFile[50] = "Micropolis.inp";
+char reportFile[50] = "Micropolis.rpt";
 char directoryString[50] = "L1_LP/";
 //
 //

@@ -21,7 +21,7 @@
 //	for number of leaks and number of simulations  
 //
 //
-int numOfLeaks = 2, iterations = 10, numOfTimePoints = 24;
+int numOfLeaks = 2, iterations = 100, numOfTimePoints = 24;
 double delta = 1, minLeakSize = 1.0, maxLeakSize = 10.0,
 	binaryLeakLimit = 2.0;
 char inputFile[50] = "Net3.inp";
@@ -1110,7 +1110,7 @@ int writeSummaryFile(int k, int optimstatus, double objval, double sol[])
 //Create an output file for each simulation/optimization run
 int writeRawResults(int k, int optimstatus, double sol[])
 {	
-	char sequentialFile[100], buffer[10];
+	char sequentialFile[100], buffer[10], name[20];
 	int i; 
 	
 	i = 0;	
@@ -1129,13 +1129,14 @@ int writeRawResults(int k, int optimstatus, double sol[])
 	
 	if (optimstatus == GRB_OPTIMAL) 
 	{	
-		for(i = 0; i < ((totalNodeCount * 2) - 1); i++)
-		{		  	
-			fprintf(ptr_file, "  sol[%d] =, %f \n", (i+1), sol[i]);
-		}
-		for(i = ((totalNodeCount * 2) - 1); i < (totalNodeCount * 2); i++)
-		{		  	
-			fprintf(ptr_file, "  sol[%d] =, %f", (i+1), sol[i]);
+		for(i = 0; i < (totalNodeCount); i++)
+		{
+			ENgetnodeid(i+1, name);
+			fprintf(ptr_file, "%s,", name);								
+			fprintf(ptr_file, "%f\n", sol[i]); //((i+1) + (counter * totalNodeCount * 3)), sol[i + (counter * (totalNodeCount * 3))]);
+			
+			
+			
 		}
 	} else if (optimstatus == GRB_INF_OR_UNBD) 
 	{
