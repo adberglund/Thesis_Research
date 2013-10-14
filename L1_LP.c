@@ -565,7 +565,8 @@ void analyzeBaseCase(int nodeCount)
 	{
 		baseCasePressureMatrix[i-1] = baseCasePressureMatrix[i-1] 
 			/ numOfTimePoints;
-	}
+		
+	}	
 }
 
 //FUNCTION

@@ -21,7 +21,7 @@
 //	for number of leaks and number of simulations  
 //
 //
-int numOfLeaks = 2, iterations = 10, numOfTimePoints = 24;
+int numOfLeaks = 2, iterations = 1, numOfTimePoints = 4;
 double delta = 1, minLeakSize = 1.0, maxLeakSize = 10.0,
 	binaryLeakLimit = 2.0;
 char inputFile[50] = "Net3.inp";

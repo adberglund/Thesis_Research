@@ -21,8 +21,8 @@
 //	for number of leaks and number of simulations  
 //
 //
-int numOfLeaks = 2, iterations = 100, numOfTimePoints = 24;
-double delta = 1, minLeakSize = 1.0, maxLeakSize = 10.0,
+int numOfLeaks = 2, iterations = 1, numOfTimePoints = 4;
+double delta = 1, minLeakSize = 100.0, maxLeakSize = 150.0,
 	binaryLeakLimit = 2.0;
 char inputFile[50] = "Net3.inp";
 char reportFile[50] = "Net3.rpt";
@@ -32,7 +32,7 @@ char directoryString[50] = "L1_Iterative/";
 
 int totalNodeCount, EPANETsimCounter;
 int *leakNodes;
-double totalDemand, averageDelta, averagePreviousDelta, bigM = 9999999999.99,
+double totalDemand, averageDelta, averagePreviousDelta, bigM = 999999.99,
 	totalTime, timePerIteration;
 double *baseCasePressureMatrix, *observedPressure, *coefficients, *b, *bhat,
 	*realLeakValues, *singleRunErrors, *leakDemands, *leakMagnitudes, 
@@ -58,6 +58,7 @@ int writeSummaryFile(int, int, double, double[]);
 int writeRawResults(int, int, double[]);
 int writeLeakFile(int);
 int writeErrorFile();
+int writeAhat(int, char *);
 int setOutputDirectory();
 
 int main(int argc, char *argv[]) 
@@ -154,7 +155,8 @@ int main(int argc, char *argv[])
 		
 		nLeaks(numOfLeaks, totalNodeCount);										
 		
-		populateMatricies(totalNodeCount);		
+		populateMatricies(totalNodeCount);
+		writeAhat(k, "LP");		
 		
 		// Create an empty model 		
  		error = GRBnewmodel(env, &model, "L1Approx", 0, NULL, NULL, NULL, NULL, 
@@ -192,6 +194,12 @@ int main(int argc, char *argv[])
 		error = GRBoptimize(model);
 		if (error) goto QUIT;
 		
+		error = GRBwrite(model, "L1_Iterative_LP.lp");
+		if (error) goto QUIT;
+		
+		error = GRBwrite(model, "L1_Iterative_LP.sol");
+		if (error) goto QUIT;
+		
 		error = GRBgetdblattrarray(model, GRB_DBL_ATTR_X, 0, 
 			(totalNodeCount * 2), sol);
 		if (error) goto QUIT;
@@ -205,7 +213,9 @@ int main(int argc, char *argv[])
 			averageDelta += leakGuesses[i];
 		}
 		
-		averageDelta = averageDelta / numOfLeaks;
+		averageDelta = averageDelta / binaryLeakLimit;
+		
+		printf("\n\n averageDelta = %f", averageDelta);
 		
 		for (i = 0; i < totalNodeCount; i++)
 		{
@@ -216,7 +226,7 @@ int main(int argc, char *argv[])
 		}		
 		averagePreviousDelta = averagePreviousDelta / totalNodeCount;
 
-		
+		getchar();
 		// Free model 
 		GRBfreemodel(model);
 		
@@ -224,7 +234,8 @@ int main(int argc, char *argv[])
 		{
 			counter++;
 										
-			populateMatricies(totalNodeCount);		
+			populateMatricies(totalNodeCount);
+			writeAhat(k, "MIP");
 	
 			// Create an empty model 		
  			error = GRBnewmodel(env, &model, "L1MIP", 0, NULL, NULL, NULL, NULL, 
@@ -288,6 +299,12 @@ int main(int argc, char *argv[])
         	
 			error = GRBoptimize(model);
 			if (error) goto QUIT;	
+			
+			error = GRBwrite(model, "L1_Iterative_MIP.lp");
+			if (error) goto QUIT;
+		
+			error = GRBwrite(model, "L1_Iterative_MIP.sol");
+			if (error) goto QUIT;
 			
 			// Capture solution information		
 			error = GRBgetintattr(model, GRB_INT_ATTR_STATUS, &optimstatus);
@@ -349,7 +366,8 @@ int main(int argc, char *argv[])
 		{
 			counter++;
 			
-			populateMatricies(totalNodeCount);		
+			populateMatricies(totalNodeCount);
+			writeAhat(k, "Polish");
 		
 			// Create an empty model 		
  			error = GRBnewmodel(env, &model, "L1MIP", 0, NULL, NULL, NULL, NULL, 
@@ -412,6 +430,12 @@ int main(int argc, char *argv[])
 			if (error) goto QUIT;	
         	
 			error = GRBoptimize(model);
+			if (error) goto QUIT;
+			
+			error = GRBwrite(model, "L1_Iterative_Polish.lp");
+			if (error) goto QUIT;
+		
+			error = GRBwrite(model, "L1_Iterative_Polish.sol");
 			if (error) goto QUIT;
 						
 			// Capture solution information		
@@ -663,8 +687,8 @@ void populateMatricies(int numNodes)
 	for (i = numNodes; i < (numNodes * 2); i++)
 	{
 		bhat[i] = -b[i-numNodes];
-		//printf("\t\t\t\tbhat[%d] = %f", i-numNodes, bhat[i-numNodes]);
-		//printf("\tbhat[%d] = %f\n", i, bhat[i]);
+		printf("\t\t\t\tbhat[%d] = %f", i-numNodes, bhat[i-numNodes]);
+		printf("\tbhat[%d] = %f\n", i, bhat[i]);
 	}
 	
 	for (i = 0; i < totalNodeCount; i++)
@@ -672,6 +696,7 @@ void populateMatricies(int numNodes)
 		for (j = 0; j < totalNodeCount; j++)
 		{
 			largePressureMatrix[i][j] = 0;
+			largeA[i][j] = 0;
 		}
 	}
 	
@@ -682,16 +707,16 @@ void populateMatricies(int numNodes)
 	
 	//Update A matrix		
 	for(i = 0; i < numNodes; i++)
-	{		
+	{				
 		for(j = 0; j < numNodes; j++)
 		{
 			//THIS MAY BE WRONG!!!
 			if(deltas[j] != 0)
 			{
 				largeA[i][j] = (baseCasePressureMatrix[i] - 
-					largePressureMatrix[i][j]) / deltas[j];
-			}
-		}			
+					largePressureMatrix[i][j]) / deltas[j];		
+			}			
+		}				
 	}	
 	
 	//Create A-hat
@@ -732,6 +757,8 @@ void populateMatricies(int numNodes)
 		//realLeakValues[temp] = leakMagnitudes[i];
 		realLeakValues[(leakNodes[i]-1)] = leakMagnitudes[i];
 	}
+	
+	
 	
 }
 
@@ -805,6 +832,7 @@ void analyzeBaseCase(int nodeCount)
 	long t, tstep, hydraulicTimeStep, duration;
 	float pressure;
 	int i, currentTime;	
+	char name[20];
 	
 	i = currentTime = 0;
 	pressure = 0.0;
@@ -848,7 +876,10 @@ void analyzeBaseCase(int nodeCount)
 	{
 		baseCasePressureMatrix[i-1] = baseCasePressureMatrix[i-1] 
 			/ numOfTimePoints;
+		ENgetnodeid(i, name);
+		printf("base Case pressure node %s = %f\n", name, baseCasePressureMatrix[i-1]);
 	}
+	getchar();
 }
 
 //FUNCTION
@@ -859,6 +890,7 @@ void oneLeak(int index, double emitterCoeff, int nodeCount, int columnNumber)
 	int i, currentTime;
 	long t, tstep, hydraulicTimeStep;
 	float pressure;
+	char name[20];
 	
 	i = currentTime = 0;
 	pressure = 0;
@@ -897,8 +929,11 @@ void oneLeak(int index, double emitterCoeff, int nodeCount, int columnNumber)
 	for (i = 1; i <= nodeCount; i++)
 	{					
 		largePressureMatrix[i-1][columnNumber] = 
-			largePressureMatrix[i-1][columnNumber] / numOfTimePoints;			
+			largePressureMatrix[i-1][columnNumber] / numOfTimePoints;
+		//ENgetnodeid(i, name);
+		//printf("One leak Pressure @ node %s = %f\n", name, largePressureMatrix[i-1][columnNumber]);			
 	}
+	//getchar();
 }
 
 //FUNCTION
@@ -908,6 +943,7 @@ void nLeaks(int leakCount, int nodeCount)
 	long t, tstep, hydraulicTimeStep, duration;	
 	float pressure, baseDemand, demand;
 	int i, currentTime;
+	char name[20];
 
 	i = currentTime = 0;
 	totalDemand = pressure = baseDemand = demand = 0.0;
@@ -943,7 +979,7 @@ void nLeaks(int leakCount, int nodeCount)
 			{			
 				ENgetnodevalue(i, EN_PRESSURE, &pressure);						
 				ENgetnodevalue(i, EN_DEMAND, &demand);												
-				observedPressure[i-1] += (double)pressure;			
+				observedPressure[i-1] += pressure;			
 				totalDemand += demand;	
 			}
 			
@@ -970,7 +1006,10 @@ void nLeaks(int leakCount, int nodeCount)
 	for (i=1; i <= nodeCount; i++)
 	{
 		observedPressure[i-1] = observedPressure[i-1] / numOfTimePoints;
+		ENgetnodeid(i, name);
+		printf("observed pressure @ node %s = %f\n", name, observedPressure[i-1]);
 	}
+	getchar();
 }
 
 //FUNCTION
@@ -981,7 +1020,7 @@ void findHighestMagnitudes(double *solutions)
 	
 	for (i = 0; i < binaryLeakLimit; i++)
 	{
-		leakGuesses[i] = 0.0;
+		//leakGuesses[i] = 0.0;
 	}
 	
 	for (i = 0; i < binaryLeakLimit; i++)
@@ -1000,6 +1039,7 @@ void findHighestMagnitudes(double *solutions)
 					leakGuesses[i] = solutions[j];
 			}
 		}
+		printf("\n\t\tleakGuesses[%d] = %f\t", i, leakGuesses[i]);
 	}
 }
 
@@ -1216,6 +1256,41 @@ int writeLeakFile(int k)
 		fprintf(ptr_file,"leak %d, %d, Node ID, %s, Magnitude, %f",
 			i, leakNodes[i], name, leakMagnitudes[i]);
 	}
+	
+	fclose(ptr_file);
+	return 0;	
+}
+
+int writeAhat(int k, char *version)
+{
+	int i, j;
+	char sequentialFile[100], buffer[10], name[10];
+	i = j = 0;	
+	
+	//Create summary CSV file for each set of leaks
+	sequentialFile[0] = '\0';
+	//strcat(sequentialFile, "/home/andrew/Ubuntu One/Research/Thesis_Results/");
+	//strcat(sequentialFile, directoryString);
+	strcat(sequentialFile, globalDirName);
+	strcat(sequentialFile, "/Ahat_");
+	sprintf(buffer,"%d",k);
+	strcat(sequentialFile, buffer);
+	strcat(sequentialFile, version);
+	strcat(sequentialFile, ".csv");
+	
+	ptr_file = fopen(sequentialFile, "w");
+	if (!ptr_file)
+		return 1;	
+	
+	for(i = 0; i < (totalNodeCount * 2); i++)
+	{			
+		for (j = 0; j < (totalNodeCount * 2); j++)
+		{
+			fprintf(ptr_file,"%f,", Ahat[i][j]);				
+		}
+		fprintf(ptr_file,"\n");
+	}
+	
 	
 	fclose(ptr_file);
 	return 0;	
