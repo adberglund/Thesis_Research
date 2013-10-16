@@ -22,7 +22,7 @@
 //	for number of leaks and number of simulations  
 //
 //
-int numOfLeaks = 2, iterations = 100, numOfTimePoints = 24, numOfNodesToIgnore = 5;
+int numOfLeaks = 2, iterations = 20, numOfTimePoints = 24, numOfNodesToIgnore = 5;
 double delta = 1, minLeakSize = 1.0, maxLeakSize = 10.0;
 char inputFile[50] = "Net3.inp";
 char reportFile[50] = "Net3.rpt";
@@ -79,7 +79,7 @@ int main(int argc, char *argv[])
 	ENgetcount(EN_TANKCOUNT, &storage);
 	totalNodeCount = numNodes - storage;
 	
-	totalNodeCount = totalNodeCount - numOfNodesToIgnore;
+	//totalNodeCount = totalNodeCount - numOfNodesToIgnore;
 		
 	int       error = 0;
 	double    sol[(totalNodeCount * 2)];
@@ -434,7 +434,7 @@ void populateMatricies(int numNodes)
 
 void randomizeLeaks(int numNodes, int numOfLeaks)
 {	
-	int i, j, k;
+	int i, j, k, compareResult;
 	char name[20];
 	
 	i = j = k = 0;
@@ -467,9 +467,10 @@ void randomizeLeaks(int numNodes, int numOfLeaks)
 		{
 			ENgetnodeid(i, name);
 			for (j = 0; j < numOfNodesToIgnore; j++)
-			{				
-				if (name == nodesToIgnore[j])
-				{
+			{
+				compareResult = strncmp(name, nodesToIgnore[j], 20);				
+				if (compareResult == 0)
+				{								
 					leakNodes[i] = (int)(rand()%numNodes)+1;
 					k = i;			
 					while(k >= 1)
@@ -484,8 +485,10 @@ void randomizeLeaks(int numNodes, int numOfLeaks)
 						k--;
 					}
 				}
+					
 			}
 		}
+		
 					
 		
 		for(i = 0; i < numOfLeaks; i++)

@@ -21,12 +21,13 @@
 //	for number of leaks and number of simulations  
 //
 //
-int numOfLeaks = 2, iterations = 1, numOfTimePoints = 4;
+int numOfLeaks = 2, iterations = 20, numOfTimePoints = 4, numOfNodesToIgnore = 5;
 double delta = 1, minLeakSize = 1.0, maxLeakSize = 10.0,
 	binaryLeakLimit = 2.0;
 char inputFile[50] = "Net3.inp";
 char reportFile[50] = "Net3.rpt";
 char directoryString[50] = "L1_MIP/";
+char *nodesToIgnore[5] = {"10", "60", "61", "601", "123"};
 //
 //
 
@@ -76,6 +77,8 @@ int main(int argc, char *argv[])
 	ENgetcount(EN_NODECOUNT, &numNodes);
 	ENgetcount(EN_TANKCOUNT, &storage);
 	totalNodeCount = numNodes - storage;
+	
+	//totalNodeCount = totalNodeCount - numOfNodesToIgnore;
 	
 	int       error = 0;
 	double    sol[(totalNodeCount * 3)];
@@ -459,9 +462,10 @@ void populateMatricies(int numNodes)
 
 void randomizeLeaks(int numNodes, int numOfLeaks)
 {	
-	int i, j;
+	int i, j, k, compareResult;
+	char name[20];
 	
-	i = j = 0;
+	i = j = k = 0;
 	
 	for (i = 0; i < numOfLeaks; i++)
 		{
@@ -472,32 +476,7 @@ void randomizeLeaks(int numNodes, int numOfLeaks)
 
 		for (i = 0; i < numOfLeaks; i++)
 		{			
-			leakNodes[i] = (int)(rand()%numNodes)+1;
-			/*
-			if (i > 0)
-			{	
-				for (j = 0; j < i; j++)
-				{
-					if (leakNodes[i] == leakNodes[j])
-					{
-						do
-						{						
-							leakNodes[i] = (int)(rand()%numNodes)+1;
-						}while (leakNodes[i] == leakNodes[j]);
-					}
-				}
-			}
-			*/
-			/*
-			if (leakNodes[i] == 32)
-			{
-				do
-				{			
-					leakNodes[i] = (int)(rand()%numNodes);//+1;
-				}while(leakNodes[i] == 32);
-			}
-			*/
-			
+			leakNodes[i] = (int)(rand()%numNodes)+1;			
 			j = i;
 			
 			while(j >= 1)
@@ -512,6 +491,32 @@ void randomizeLeaks(int numNodes, int numOfLeaks)
 				j--;
 			}
 		}			
+		
+		for (i = 0; i < numOfLeaks; i++)
+		{
+			ENgetnodeid(i, name);
+			for (j = 0; j < numOfNodesToIgnore; j++)
+			{
+				compareResult = strncmp(name, nodesToIgnore[j], 20);				
+				if (compareResult == 0)
+				{								
+					leakNodes[i] = (int)(rand()%numNodes)+1;
+					k = i;			
+					while(k >= 1)
+					{
+						if (leakNodes[i] == leakNodes[k-1])
+						{
+							do
+							{			
+								leakNodes[i] = (int)(rand()%numNodes);//+1;
+							}while(leakNodes[i] == leakNodes[k-1]);										
+						}
+						k--;
+					}
+				}
+					
+			}
+		}
 		
 		for(i = 0; i < numOfLeaks; i++)
 		{
@@ -550,10 +555,10 @@ void analyzeBaseCase(int nodeCount)
 {		
 	long t, tstep, hydraulicTimeStep, duration;
 	float pressure;
-	int i, currentTime;	
-	//char name[20];
+	int i, j, currentTime, compareResult;	
+	char name[20];
 	
-	i = currentTime = 0;
+	i = j = currentTime = 0;
 	pressure = 0.0;
 	
 	for (i=1; i <= nodeCount; i++)
@@ -578,9 +583,20 @@ void analyzeBaseCase(int nodeCount)
 		{
 			for (i=1; i <= nodeCount; i++)
 			{
-				ENgetnodevalue(i, EN_PRESSURE, &pressure);
-				//ENgetnodeid(i, name);
-				baseCasePressureMatrix[i-1] += pressure;		
+				ENgetnodeid(i, name);
+				for (j = 0; j < numOfNodesToIgnore; j++)
+				{					
+					compareResult = strncmp(name, nodesToIgnore[j], 20);
+					if (compareResult == 0)
+					{								
+						break;
+					}
+				}
+				if (compareResult != 0)
+				{
+					ENgetnodevalue(i, EN_PRESSURE, &pressure);
+					baseCasePressureMatrix[i-1] += pressure;
+				}
 			}
 			currentTime++;
 		}		
@@ -602,11 +618,12 @@ void analyzeBaseCase(int nodeCount)
 //Determines how many pressure violations occur in the network by leak location
 void oneLeak(int index, double emitterCoeff, int nodeCount, int columnNumber) 
 {	
-	int i, currentTime;
+	int i, j, currentTime, compareResult;
 	long t, tstep, hydraulicTimeStep;
 	float pressure;
+	char name[20];
 	
-	i = currentTime = 0;
+	i = j = currentTime = 0;
 	pressure = 0;
 	
 	ENgettimeparam(EN_HYDSTEP, &hydraulicTimeStep);
@@ -624,14 +641,26 @@ void oneLeak(int index, double emitterCoeff, int nodeCount, int columnNumber)
 			&& currentTime < numOfTimePoints)
 		{
 			for (i = 1; i <= nodeCount; i++)
-			{			
-				ENgetnodevalue(i, EN_PRESSURE, &pressure);
-				largePressureMatrix[i-1][columnNumber] += pressure;			
+			{						
+				ENgetnodeid(i, name);
+				for (j = 0; j < numOfNodesToIgnore; j++)
+				{
+					compareResult = strncmp(name, nodesToIgnore[j], 20);
+					if (compareResult == 0)
+					{								
+						break;
+					}
+				}
+				if (compareResult != 0)
+				{
+					ENgetnodevalue(i, EN_PRESSURE, &pressure);
+					largePressureMatrix[i-1][columnNumber] += pressure;
+				}
             }
             currentTime++;
          }
 		ENnextH(&tstep); 
-	} while (tstep > 0); 
+	} while (tstep > 0);
 	
 	//Close the hydraulic solver
 	ENcloseH();
@@ -652,10 +681,10 @@ void nLeaks(int leakCount, int nodeCount)
 {
 	long t, tstep, hydraulicTimeStep, duration;	
 	float pressure, baseDemand, demand;
-	int i, currentTime;
-	//char name[20];
+	int i, j, currentTime, compareResult;
+	char name[20];
 
-	i = currentTime = 0;
+	i = j = currentTime = 0;
 	totalDemand = pressure = baseDemand = demand = 0.0;
 	
 	ENgettimeparam(EN_HYDSTEP, &hydraulicTimeStep);
@@ -685,11 +714,23 @@ void nLeaks(int leakCount, int nodeCount)
 			&& currentTime < numOfTimePoints)
 		{
 			for (i = 1; i <= nodeCount; i++)
-			{			
-				ENgetnodevalue(i, EN_PRESSURE, &pressure);						
-				ENgetnodevalue(i, EN_DEMAND, &demand);												
-				observedPressure[i-1] += (double)pressure;			
-				totalDemand += demand;	
+			{					
+				ENgetnodeid(i, name);
+				for (j = 0; j < numOfNodesToIgnore; j++)
+				{
+					compareResult = strncmp(name, nodesToIgnore[j], 20);
+					if (compareResult == 0)
+					{								
+						break;
+					}
+				}
+				if (compareResult != 0)
+				{
+					ENgetnodevalue(i, EN_PRESSURE, &pressure);						
+					ENgetnodevalue(i, EN_DEMAND, &demand);												
+					observedPressure[i-1] += (double)pressure;			
+					totalDemand += demand;
+				}
 			}
 			
 			for (i = 0; i < leakCount; i++)
@@ -701,7 +742,7 @@ void nLeaks(int leakCount, int nodeCount)
 			currentTime++;
 		}
 		ENnextH(&tstep); 		
-	} while (tstep > 0); 
+	} while (tstep > 0);  
 	
 	//Close the hydraulic solver
 	ENcloseH();
@@ -816,10 +857,10 @@ int writeSummaryFile(int k, int optimstatus, double objval, double sol[])
 //Create an output file for each simulation/optimization run
 int writeRawResults(int k, int optimstatus, double sol[])
 {	
-	char sequentialFile[100], buffer[10];
-	int i; 
+	char sequentialFile[100], buffer[10], name[20];
+	int i, j, compareResult; 
 	
-	i = 0;	
+	i = j = 0;	
 	
 	//Create summary CSV file for each set of leaks
 	sequentialFile[0] = '\0';
@@ -835,13 +876,26 @@ int writeRawResults(int k, int optimstatus, double sol[])
 	
 	if (optimstatus == GRB_OPTIMAL) 
 	{	
-		for(i = 0; i < ((totalNodeCount * 2) - 1); i++)
-		{		  	
-			fprintf(ptr_file, "  sol[%d] =, %f \n", (i+1), sol[i]);
-		}
-		for(i = ((totalNodeCount * 2) - 1); i < (totalNodeCount * 2); i++)
-		{		  	
-			fprintf(ptr_file, "  sol[%d] =, %f", (i+1), sol[i]);
+		for(i = 0; i < (totalNodeCount); i++)
+		{
+			ENgetnodeid(i+1, name);
+			for (j = 0; j < numOfNodesToIgnore; j++)
+			{
+				//printf("\nnodesToIgnore[%d]=%s,name=%sblob\n",j,nodesToIgnore[j],name);
+				compareResult = strncmp(name, nodesToIgnore[j], 20);
+				if (compareResult == 0)
+				{
+					//printf("\n\n\n\t\t\t%sblob in raw\n\n\n", name);					
+					break;
+				}
+			}
+			if (compareResult != 0)
+			{
+				//printf("in raw results name = %s \t and sol = %f\n", name, sol[i]);
+				fprintf(ptr_file, "%s,", name);								
+				fprintf(ptr_file, "%f\n", sol[i]); //((i+1) + (counter * totalNodeCount * 3)), sol[i + (counter * (totalNodeCount * 3))]);
+			}			
+				
 		}
 	} else if (optimstatus == GRB_INF_OR_UNBD) 
 	{
