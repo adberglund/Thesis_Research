@@ -9,7 +9,7 @@
 
 #define SECONDS_PER_HOUR 3600
 #define SECONDS_PER_DAY 86400
-#define WARMUP_PERIOD 259200
+#define WARMUP_PERIOD (259200 + (23 * 3600))
 
 //September 10, 2013
 //L1-Approximation (L1 calculates absolute error, in this case, between
@@ -21,7 +21,7 @@
 //	for number of leaks and number of simulations  
 //
 //
-int numOfLeaks = 2, iterations = 20, numOfTimePoints = 4, numOfNodesToIgnore = 8;
+int numOfLeaks = 2, iterations = 1, numOfTimePoints = 1, numOfNodesToIgnore = 8;
 double delta = 1, minLeakSize = 1.0, maxLeakSize = 10.0, minLeakThreshold =0.5,
 	binaryLeakLimit = 0.0;
 char inputFile[50] = "Net3.inp";
@@ -39,7 +39,7 @@ double **baseCasePressureMatrix, *baseCaseDemand, **observedPressure,
 	*observedDemand, *coefficients, *b, *bhat,
 	*realLeakValues, *singleRunErrors, *leakDemands, *leakMagnitudes, 
 	*modelError, *objectiveValues, *deltas, *previousDeltas, *leakGuesses,
-	***largePressureMatrix, **largeA, **Ahat,  **I; 
+	***largePressureMatrix, **largeA, **Ahat,  **I, *lastLPSolution; 
 char globalDirName[100];
 clock_t startTime, endTime, iterationStartTime, iterationEndTime;
 
@@ -155,6 +155,8 @@ int main(int argc, char *argv[])
 	{
 		Ahat[i] = (double *) calloc( (totalNodeCount * 2), sizeof(double) );
 	}
+	
+	lastLPSolution = (double *) calloc((totalNodeCount * 2), sizeof(double));
 		 
 	// Create environment 
  	error = GRBloadenv(&env, "L1_Iterative.log");
@@ -168,6 +170,7 @@ int main(int argc, char *argv[])
 		iterationStartTime = clock();
 		
 		EPANETsimCounter = 0;
+		counter = 0;
 		
 		initializeArrays();
 		
@@ -237,6 +240,12 @@ int main(int argc, char *argv[])
 				(totalNodeCount * 2), sol);
 			if (error) goto QUIT;
 			
+			for (i = 0; i < totalNodeCount * 2; i++)
+			{
+				lastLPSolution[i] = sol[i];
+			}
+
+	
 			binaryLeakLimit = 0.0;
 			
 			for (i = 0; i < totalNodeCount; i++)
@@ -281,6 +290,8 @@ int main(int argc, char *argv[])
 			// Free model 
 			GRBfreemodel(model);
 			free(leakGuesses);
+			
+			counter++;
 		
 		}while((objval - previousObjectiveValue) < 0);
 		
@@ -513,10 +524,10 @@ int main(int argc, char *argv[])
 			
 			for (i = 0; i < totalNodeCount; i++)
 			{	
-				if  (sol[i] > 0.01)
-				{
+				//if  (sol[i] > 0.01)
+				//{
 					deltas[i] = sol[i];
-				}
+				//}
 			}
 			
 			objectiveValues[k] = objval;
@@ -613,7 +624,9 @@ int main(int argc, char *argv[])
 	{
 		free((void *)Ahat[i]);
 	}
-	free((void *)Ahat);	
+	free((void *)Ahat);
+
+	free((void *)lastLPSolution);	
 	
 	
 	
@@ -671,7 +684,8 @@ void initializeArrays()
 	
 	for (i = 0; i < (totalNodeCount * 2); i++)
 	{
-		bhat[i] = 0;		
+		bhat[i] = 0;
+		lastLPSolution[i] = 0;		
 	}
 	
 	for (i = 0; i < (totalNodeCount * 2); i++)
@@ -1419,7 +1433,7 @@ int writeRawResults(int k, int optimstatus, double sol[])
 			{
 				//printf("in raw results name = %s \t and sol = %f\n", name, sol[i]);
 				fprintf(ptr_file, "%s,", name);								
-				fprintf(ptr_file, "%f\n", sol[i]); //((i+1) + (counter * totalNodeCount * 3)), sol[i + (counter * (totalNodeCount * 3))]);
+				fprintf(ptr_file, "%f,%f\n", sol[i], lastLPSolution[i]); //((i+1) + (counter * totalNodeCount * 3)), sol[i + (counter * (totalNodeCount * 3))]);
 			}			
 				
 		}
