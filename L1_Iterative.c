@@ -9,7 +9,7 @@
 
 #define SECONDS_PER_HOUR 3600
 #define SECONDS_PER_DAY 86400
-#define WARMUP_PERIOD (259200 + (23 * 3600))
+#define WARMUP_PERIOD (259200 + (0 * 3600))
 
 //September 10, 2013
 //L1-Approximation (L1 calculates absolute error, in this case, between
@@ -21,8 +21,8 @@
 //	for number of leaks and number of simulations  
 //
 //
-int numOfLeaks = 2, iterations = 1, numOfTimePoints = 1, numOfNodesToIgnore = 8;
-double delta = 1, minLeakSize = 1.0, maxLeakSize = 10.0, minLeakThreshold =0.5,
+int numOfLeaks = 2, iterations = 10, numOfTimePoints = 4, numOfNodesToIgnore = 8;
+double delta = 1, minLeakSize = 1.0, maxLeakSize = 10.0, minLeakThreshold =0.1,
 	binaryLeakLimit = 0.0;
 char inputFile[50] = "Net3.inp";
 char reportFile[50] = "Net3.rpt";
@@ -249,8 +249,15 @@ int main(int argc, char *argv[])
 			binaryLeakLimit = 0.0;
 			
 			for (i = 0; i < totalNodeCount; i++)
-			{			
-				deltas[i] = sol[i];
+			{
+				deltas[i] = 1.0;
+			}
+			
+			for (i = 0; i < totalNodeCount; i++)
+			{
+				if (sol[i] > 1)
+					deltas[i] = sol[i];
+				//printf("\t\tLP deltas[%d] = %f\n", i, deltas[i]);
 				if (sol[i] > minLeakThreshold)
 					binaryLeakLimit++;
 			}
@@ -517,18 +524,27 @@ int main(int argc, char *argv[])
 				(totalNodeCount * 3), sol);
 			if (error) goto QUIT;
 			
-			for (i = totalNodeCount*2; i < totalNodeCount*3; i++)
-			{	
+			//for (i = totalNodeCount*2; i < totalNodeCount*3; i++)
+			//{	
 				//printf( "\n\t\t\tsol[%d] = %f", i, sol[i]);
-			}
+			//}
+			
+			//for (i = 0; i < totalNodeCount; i++)
+			//{
+				//deltas[i] = 1.0;
+			//}
 			
 			for (i = 0; i < totalNodeCount; i++)
 			{	
-				//if  (sol[i] > 0.01)
-				//{
+				if  (sol[i] > 1)
+				{
 					deltas[i] = sol[i];
-				//}
+				}
+				else
+					deltas[i] = 1.0;
+				//printf("\t\tMIP deltas[%d] = %f\n", i, deltas[i]);
 			}
+			//getchar();
 			
 			objectiveValues[k] = objval;
 			modelError[k] = calculateError(totalNodeCount, sol);
