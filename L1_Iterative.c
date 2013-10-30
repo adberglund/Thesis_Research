@@ -49,6 +49,7 @@ FILE *ptr_file;
 
 void initializeArrays();
 void populateMatricies(int);
+void populateBMatrix(int);
 void randomizeLeaks(int, int);
 void printLeakInfo(int);
 void analyzeBaseCase(int);
@@ -180,6 +181,8 @@ int main(int argc, char *argv[])
 		
 		nLeaks(numOfLeaks, totalNodeCount);										
 		
+		populateBMatrix(totalNodeCount);
+		
 		printLeakInfo(numOfLeaks);
 		
 		calculateLeakDemand();
@@ -187,7 +190,7 @@ int main(int argc, char *argv[])
 		do{
 			
 			populateMatricies(totalNodeCount);
-			//writeAhat(k, "LP");		
+			writeAhat(k, "LP");		
 			
 			// Create an empty model 		
  			error = GRBnewmodel(env, &model, "L1Approx", 0, NULL, NULL, NULL, NULL, 
@@ -246,18 +249,14 @@ int main(int argc, char *argv[])
 			}
 
 	
-			binaryLeakLimit = 0.0;
+			binaryLeakLimit = 0.0;			
 			
 			for (i = 0; i < totalNodeCount; i++)
 			{
 				deltas[i] = 1.0;
-			}
-			
-			for (i = 0; i < totalNodeCount; i++)
-			{
 				if (sol[i] > 1)
 					deltas[i] = sol[i];
-				printf("\t\tLP deltas[%d] = %f\n", i, deltas[i]);
+				//printf("\t\tLP deltas[%d] = %f\n", i, deltas[i]);
 				if (sol[i] > minLeakThreshold)
 					binaryLeakLimit++;
 			}
@@ -266,7 +265,7 @@ int main(int argc, char *argv[])
 			
 			leakGuesses = (double *) calloc(binaryLeakLimit, sizeof(double));
 			
-			for( i = 0; i < numOfLeaks; i++)
+			for( i = 0; i < binaryLeakLimit; i++)
 			{
 				leakGuesses[i] = 0.0;
 			}
@@ -275,7 +274,7 @@ int main(int argc, char *argv[])
 			
 			findHighestMagnitudes(sol);
 			
-			for (i = 0; i < numOfLeaks; i++)
+			for (i = 0; i < binaryLeakLimit; i++)
 			{
 				averageDelta += leakGuesses[i];
 			}
@@ -436,14 +435,14 @@ int main(int argc, char *argv[])
 		//	matrix generation in L1 approximation instead of averaging n
 		//	highest magnitudes
 		
-		binaryLeakLimit = 10.0;
+		//binaryLeakLimit = 10.0;
 		
 		do
 		{
 			counter++;
 			
 			populateMatricies(totalNodeCount);
-			//writeAhat(k, "Polish");
+			writeAhat(k, "Polish");
 		
 			// Create an empty model 		
  			error = GRBnewmodel(env, &model, "L1MIP", 0, NULL, NULL, NULL, NULL, 
@@ -502,7 +501,7 @@ int main(int argc, char *argv[])
 				val[i-(totalNodeCount * 2)] = 1.0;
 			}								
 			error = GRBaddconstr(model, totalNodeCount, ind, val, 
-				GRB_LESS_EQUAL, binaryLeakLimit,NULL);
+				GRB_LESS_EQUAL, binaryLeakLimit, NULL);
 			if (error) goto QUIT;	
         	
 			error = GRBoptimize(model);
@@ -527,10 +526,12 @@ int main(int argc, char *argv[])
 				(totalNodeCount * 3), sol);
 			if (error) goto QUIT;
 			
-			//for (i = totalNodeCount*2; i < totalNodeCount*3; i++)
-			//{	
-				//printf( "\n\t\t\tsol[%d] = %f", i, sol[i]);
-			//}
+			for (i = 0; i < totalNodeCount*3; i++)
+			{	
+				printf( "sol[%d] = %f\t", i, sol[i]);
+			}
+			printf( "\n", i, sol[i]);
+			getchar();
 			
 			//for (i = 0; i < totalNodeCount; i++)
 			//{
@@ -545,7 +546,7 @@ int main(int argc, char *argv[])
 				}
 				else
 					deltas[i] = 1.0;
-				printf("\t\tMIP deltas[%d] = %f\n", i, deltas[i]);
+				//printf("\t\tMIP deltas[%d] = %f\n", i, deltas[i]);
 			}
 			//getchar();
 			
@@ -756,12 +757,62 @@ void initializeArrays()
 	for (i = 0; i < totalNodeCount; i++)
 	{
 		coefficients[i] = 0.0;
+		coefficients[i + totalNodeCount] = 1.0;
 	}	
-	for (i = totalNodeCount; i < (totalNodeCount * 2); i++)
+	//for (i = totalNodeCount; i < (totalNodeCount * 2); i++)
+	//{
+		//coefficients[i] = 1.0;
+	//}
+	
+}
+
+void populateBMatrix(int numNodes)
+{
+	int i, j;
+	
+	//printf("local numNodes variable = %d", numNodes);
+	//getchar();
+	i = j = 0;
+	
+	for (i = 0; i < numNodes; i++)
 	{
-		coefficients[i] = 1.0;
+		b[i] = 0;		
 	}
 	
+	for (i = 0; i < (numNodes * 2); i++)
+	{
+		bhat[i] = 0;		
+	}
+	
+	//Update b matrix
+	for (i = 0; i < numOfTimePoints; i++)
+	{
+		for (j = 0; j < numNodes; j++)
+		{
+			b[j] += (baseCasePressureMatrix[i][j] - observedPressure[i][j]);	
+			//printf("b[%d] = %f\n",i,b[i]);
+		}
+	}
+	
+	for (i = 0; i < numNodes; i++)
+	{
+		b[i] = b[i] / numOfTimePoints;		
+		//printf("b[%d] = %f\n", j, b[j]);
+	}
+	//getchar();
+	
+	//Create b-hat
+	for (i = 0; i < numNodes; i++)
+	{
+		bhat[i] = b[i];
+		bhat[i + numNodes] = -b[i];
+	}
+	//for (i = numNodes; i < (numNodes * 2); i++)
+	//{
+		//bhat[i] = -b[i-numNodes];
+		//printf("\t\t\t\tbhat[%d] = %f", i-numNodes, bhat[i-numNodes]);
+		//printf("\tbhat[%d] = %f\n", i, bhat[i]);
+	//}
 }
 
 //FUNCTION
@@ -775,7 +826,7 @@ void populateMatricies(int numNodes)
 	//getchar();
 	i = j = k = 0;
 	
-	
+	/*
 	for (i = 0; i < numNodes; i++)
 	{
 		b[i] = 0;		
@@ -815,7 +866,8 @@ void populateMatricies(int numNodes)
 		printf("\t\t\t\tbhat[%d] = %f", i-numNodes, bhat[i-numNodes]);
 		printf("\tbhat[%d] = %f\n", i, bhat[i]);
 	}
-
+	*/
+	
 	for (k = 0; k < numOfTimePoints; k++)
 	{
 		for (i = 0; i < totalNodeCount; i++)
@@ -859,7 +911,7 @@ void populateMatricies(int numNodes)
 			for(j = 0; j < numNodes; j++)
 			{
 				largeA[i][j] += (baseCasePressureMatrix[k][i] - 
-					largePressureMatrix[k][i][j]); // / delta;			
+					largePressureMatrix[k][i][j]) / deltas[j]; // / delta;			
 			}			
 		}
 	}
@@ -868,10 +920,10 @@ void populateMatricies(int numNodes)
 	{		
 		for(j = 0; j < numNodes; j++)
 		{
-			if (deltas[j] != 0)
-			{
-				largeA[i][j] = largeA[i][j] / (deltas[j] * numOfTimePoints); // / delta;
-			}
+			//if (deltas[j] != 0)
+			//{
+				largeA[i][j] = largeA[i][j] / (numOfTimePoints); // / delta;
+			//}
 		}			
 	}
 	/*
@@ -1059,22 +1111,22 @@ void analyzeBaseCase(int nodeCount)
 		{
 			for (i=1; i <= nodeCount; i++)
 			{
-				ENgetnodeid(i, name);
-				for (j = 0; j < numOfNodesToIgnore; j++)
-				{					
-					compareResult = strncmp(name, nodesToIgnore[j], 20);
-					if (compareResult == 0)
-					{								
-						break;
-					}
-				}
-				if (compareResult != 0)
-				{
+				//ENgetnodeid(i, name);
+				//for (j = 0; j < numOfNodesToIgnore; j++)
+				//{					
+					//compareResult = strncmp(name, nodesToIgnore[j], 20);
+					//if (compareResult == 0)
+					//{								
+						//break;
+					//}
+				//}
+				//if (compareResult != 0)
+				//{
 					ENgetnodevalue(i, EN_PRESSURE, &pressure);
 					ENgetnodevalue(i, EN_DEMAND, &demand);					
 					baseCasePressureMatrix[currentTime][i-1] = pressure;
 					baseCaseDemand[i-1] += demand;
-				}
+				//}
 			}
 			currentTime++;
 		}		
@@ -1127,20 +1179,20 @@ void oneLeak(int index, double emitterCoeff, int nodeCount, int columnNumber)
 		{
 			for (i = 1; i <= nodeCount; i++)
 			{						
-				ENgetnodeid(i, name);
-				for (j = 0; j < numOfNodesToIgnore; j++)
-				{
-					compareResult = strncmp(name, nodesToIgnore[j], 20);
-					if (compareResult == 0)
-					{								
-						break;
-					}
-				}
-				if (compareResult != 0)
-				{
+				//ENgetnodeid(i, name);
+				//for (j = 0; j < numOfNodesToIgnore; j++)
+				//{
+					//compareResult = strncmp(name, nodesToIgnore[j], 20);
+					//if (compareResult == 0)
+					//{								
+						//break;
+					//}
+				//}
+				//if (compareResult != 0)
+				//{
 					ENgetnodevalue(i, EN_PRESSURE, &pressure);
 					largePressureMatrix[currentTime][i-1][columnNumber] = pressure;
-				}
+				//}
             }
             currentTime++;
          }
@@ -1217,23 +1269,23 @@ void nLeaks(int leakCount, int nodeCount)
 		{
 			for (i = 1; i <= nodeCount; i++)
 			{					
-				ENgetnodeid(i, name);
-				for (j = 0; j < numOfNodesToIgnore; j++)
-				{
-					compareResult = strncmp(name, nodesToIgnore[j], 20);
-					if (compareResult == 0)
-					{								
-						break;
-					}	
-				}	
-				if (compareResult != 0)
-				{
+				//ENgetnodeid(i, name);
+				//for (j = 0; j < numOfNodesToIgnore; j++)
+				//{
+					//compareResult = strncmp(name, nodesToIgnore[j], 20);
+					//if (compareResult == 0)
+					//{								
+						//break;
+					//}	
+				//}	
+				//if (compareResult != 0)
+				//{
 					ENgetnodevalue(i, EN_PRESSURE, &pressure);						
 					ENgetnodevalue(i, EN_DEMAND, &demand);					
 					observedPressure[currentTime][i-1] = pressure;			
 					observedDemand[i-1] += demand;
 					//printf("%f\t",demand);
-				}
+				//}
 				
 			}
 			
@@ -1295,7 +1347,7 @@ void findHighestMagnitudes(double *solutions)
 					leakGuesses[i] = solutions[j];
 			}
 		}
-		//printf("\n\t\tleakGuesses[%d] = %f\t", i, leakGuesses[i]);
+		printf("\n\t\tleakGuesses[%d] = %f\t", i, leakGuesses[i]);
 	}
 }
 
@@ -1448,22 +1500,22 @@ int writeRawResults(int k, int optimstatus, double sol[])
 		for(i = 0; i < (totalNodeCount); i++)
 		{
 			ENgetnodeid(i+1, name);
-			for (j = 0; j < numOfNodesToIgnore; j++)
-			{
+			//for (j = 0; j < numOfNodesToIgnore; j++)
+			//{
 				//printf("\nnodesToIgnore[%d]=%s,name=%sblob\n",j,nodesToIgnore[j],name);
-				compareResult = strncmp(name, nodesToIgnore[j], 20);
-				if (compareResult == 0)
-				{
+				//compareResult = strncmp(name, nodesToIgnore[j], 20);
+				//if (compareResult == 0)
+				//{
 					//printf("\n\n\n\t\t\t%sblob in raw\n\n\n", name);					
-					break;
-				}
-			}
-			if (compareResult != 0)
-			{
+					//break;
+				//}
+			//}
+			//if (compareResult != 0)
+			//{
 				//printf("in raw results name = %s \t and sol = %f\n", name, sol[i]);
 				fprintf(ptr_file, "%s,", name);								
 				fprintf(ptr_file, "%f,%f\n", sol[i], lastLPSolution[i]); //((i+1) + (counter * totalNodeCount * 3)), sol[i + (counter * (totalNodeCount * 3))]);
-			}			
+			//}			
 				
 		}
 	} else if (optimstatus == GRB_INF_OR_UNBD) 
