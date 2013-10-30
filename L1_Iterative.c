@@ -21,7 +21,7 @@
 //	for number of leaks and number of simulations  
 //
 //
-int numOfLeaks = 2, iterations = 10, numOfTimePoints = 4, numOfNodesToIgnore = 8;
+int numOfLeaks = 2, iterations = 1, numOfTimePoints = 4, numOfNodesToIgnore = 8;
 double delta = 1, minLeakSize = 1.0, maxLeakSize = 10.0, minLeakThreshold =0.1,
 	binaryLeakLimit = 0.0;
 char inputFile[50] = "Net3.inp";
@@ -257,7 +257,7 @@ int main(int argc, char *argv[])
 			{
 				if (sol[i] > 1)
 					deltas[i] = sol[i];
-				//printf("\t\tLP deltas[%d] = %f\n", i, deltas[i]);
+				printf("\t\tLP deltas[%d] = %f\n", i, deltas[i]);
 				if (sol[i] > minLeakThreshold)
 					binaryLeakLimit++;
 			}
@@ -435,6 +435,9 @@ int main(int argc, char *argv[])
 		//Polishing step that uses individual solution values for response 
 		//	matrix generation in L1 approximation instead of averaging n
 		//	highest magnitudes
+		
+		binaryLeakLimit = 10.0;
+		
 		do
 		{
 			counter++;
@@ -542,7 +545,7 @@ int main(int argc, char *argv[])
 				}
 				else
 					deltas[i] = 1.0;
-				//printf("\t\tMIP deltas[%d] = %f\n", i, deltas[i]);
+				printf("\t\tMIP deltas[%d] = %f\n", i, deltas[i]);
 			}
 			//getchar();
 			
@@ -716,7 +719,7 @@ void initializeArrays()
 			for (j = 0; j < totalNodeCount; j++)
 			{
 				largePressureMatrix[k][i][j] = 0;
-				largeA[i][j] = 0;		
+						
 			}
 		}
 	}
@@ -735,6 +738,7 @@ void initializeArrays()
 		for (j = 0; j < totalNodeCount; j++)
 		{
 			I[i][j] = 0;
+			largeA[i][j] = 0;
 		}
 	}	
 
@@ -783,18 +787,18 @@ void populateMatricies(int numNodes)
 	}
 	
 	//Update b matrix
-	for (j = 0; j < numNodes; j++)
+	for (i = 0; i < numOfTimePoints; i++)
 	{
-		for (i = 0; i < numOfTimePoints; i++)
+		for (j = 0; j < numNodes; j++)
 		{
 			b[j] += (baseCasePressureMatrix[i][j] - observedPressure[i][j]);	
 			//printf("b[%d] = %f\n",i,b[i]);
 		}
 	}
 	
-	for (j = 0; j < numNodes; j++)
+	for (i = 0; i < numNodes; i++)
 	{
-		b[j] = b[j] / numOfTimePoints;		
+		b[i] = b[i] / numOfTimePoints;		
 		//printf("b[%d] = %f\n", j, b[j]);
 	}
 	//getchar();
@@ -803,12 +807,13 @@ void populateMatricies(int numNodes)
 	for (i = 0; i < numNodes; i++)
 	{
 		bhat[i] = b[i];
+		bhat[i + numNodes] = -b[i];
 	}
 	for (i = numNodes; i < (numNodes * 2); i++)
 	{
-		bhat[i] = -b[i-numNodes];
-		//printf("\t\t\t\tbhat[%d] = %f", i-numNodes, bhat[i-numNodes]);
-		//printf("\tbhat[%d] = %f\n", i, bhat[i]);
+		//bhat[i] = -b[i-numNodes];
+		printf("\t\t\t\tbhat[%d] = %f", i-numNodes, bhat[i-numNodes]);
+		printf("\tbhat[%d] = %f\n", i, bhat[i]);
 	}
 
 	for (k = 0; k < numOfTimePoints; k++)
@@ -818,8 +823,16 @@ void populateMatricies(int numNodes)
 			for (j = 0; j < totalNodeCount; j++)
 			{
 				largePressureMatrix[k][i][j] = 0;
-				largeA[i][j] = 0;
+				//largeA[i][j] = 0;
 			}
+		}
+	}
+	
+	for (i = 0; i < totalNodeCount; i++)
+	{
+		for (j = 0; j < totalNodeCount; j++)
+		{	
+			largeA[i][j] = 0;
 		}
 	}
 	/*
