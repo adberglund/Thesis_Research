@@ -1111,22 +1111,22 @@ void analyzeBaseCase(int nodeCount)
 		{
 			for (i=1; i <= nodeCount; i++)
 			{
-				//ENgetnodeid(i, name);
-				//for (j = 0; j < numOfNodesToIgnore; j++)
-				//{					
-					//compareResult = strncmp(name, nodesToIgnore[j], 20);
-					//if (compareResult == 0)
-					//{								
-						//break;
-					//}
-				//}
-				//if (compareResult != 0)
-				//{
+				ENgetnodeid(i, name);
+				for (j = 0; j < numOfNodesToIgnore; j++)
+				{					
+					compareResult = strncmp(name, nodesToIgnore[j], 20);
+					if (compareResult == 0)
+					{								
+						break;
+					}
+				}
+				if (compareResult != 0)
+				{
 					ENgetnodevalue(i, EN_PRESSURE, &pressure);
 					ENgetnodevalue(i, EN_DEMAND, &demand);					
 					baseCasePressureMatrix[currentTime][i-1] = pressure;
 					baseCaseDemand[i-1] += demand;
-				//}
+				}
 			}
 			currentTime++;
 		}		
@@ -1179,20 +1179,20 @@ void oneLeak(int index, double emitterCoeff, int nodeCount, int columnNumber)
 		{
 			for (i = 1; i <= nodeCount; i++)
 			{						
-				//ENgetnodeid(i, name);
-				//for (j = 0; j < numOfNodesToIgnore; j++)
-				//{
-					//compareResult = strncmp(name, nodesToIgnore[j], 20);
-					//if (compareResult == 0)
-					//{								
-						//break;
-					//}
-				//}
-				//if (compareResult != 0)
-				//{
+				ENgetnodeid(i, name);
+				for (j = 0; j < numOfNodesToIgnore; j++)
+				{
+					compareResult = strncmp(name, nodesToIgnore[j], 20);
+					if (compareResult == 0)
+					{								
+						break;
+					}
+				}
+				if (compareResult != 0)
+				{
 					ENgetnodevalue(i, EN_PRESSURE, &pressure);
 					largePressureMatrix[currentTime][i-1][columnNumber] = pressure;
-				//}
+				}
             }
             currentTime++;
          }
@@ -1269,23 +1269,23 @@ void nLeaks(int leakCount, int nodeCount)
 		{
 			for (i = 1; i <= nodeCount; i++)
 			{					
-				//ENgetnodeid(i, name);
-				//for (j = 0; j < numOfNodesToIgnore; j++)
-				//{
-					//compareResult = strncmp(name, nodesToIgnore[j], 20);
-					//if (compareResult == 0)
-					//{								
-						//break;
-					//}	
-				//}	
-				//if (compareResult != 0)
-				//{
+				ENgetnodeid(i, name);
+				for (j = 0; j < numOfNodesToIgnore; j++)
+				{
+					compareResult = strncmp(name, nodesToIgnore[j], 20);
+					if (compareResult == 0)
+					{								
+						break;
+					}	
+				}	
+				if (compareResult != 0)
+				{
 					ENgetnodevalue(i, EN_PRESSURE, &pressure);						
 					ENgetnodevalue(i, EN_DEMAND, &demand);					
 					observedPressure[currentTime][i-1] = pressure;			
 					observedDemand[i-1] += demand;
 					//printf("%f\t",demand);
-				//}
+				}
 				
 			}
 			
