@@ -1549,15 +1549,15 @@ int writeErrorFile()
 	if (!ptr_file)
 		return 1;
 	
-	fprintf(ptr_file, "Objective_Value, Model_Error\n");
+	fprintf(ptr_file, "LP_Objective_Value,MIP_Objective_Value,Model_Error\n");
 	
 	for (i = 0; i < (iterations - 1); i++)
 	{
-		fprintf(ptr_file, "%f, %f\n", objectiveValues[i], modelError[i]);										
+		fprintf(ptr_file, "%f, %f\n", LPobjectiveValues[i], MIPobjectiveValues[i], modelError[i]);										
 	}
 	for (i = (iterations - 1); i < iterations; i++)
 	{
-		fprintf(ptr_file, "%f, %f", objectiveValues[i], modelError[i]);										
+		fprintf(ptr_file, "%f, %f", LPobjectiveValues[i], MIPobjectiveValues[i], modelError[i]);										
 	}
 	
 	fclose(ptr_file);
