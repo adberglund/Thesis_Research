@@ -9,7 +9,7 @@
 
 #define SECONDS_PER_HOUR 3600
 #define SECONDS_PER_DAY 86400
-#define WARMUP_PERIOD (259200 + (0 * 3600))
+#define WARMUP_PERIOD 86400//(259200 + (0 * 3600))
 
 //September 10, 2013
 //L1-Approximation (L1 calculates absolute error, in this case, between
@@ -23,16 +23,16 @@
 //
 int numOfLeaks = 2, iterations = 1, numOfTimePoints = 4, numOfNodesToIgnore = 8;	
 double delta = 1, minLeakSize = 1.0, maxLeakSize = 10.0, minLeakThreshold =0.1,
-	binaryLeakLimit = 0.0, sensorPercentOfTotalNodes = 1.0;
-char inputFile[50] = "Net3.inp";
-char reportFile[50] = "Net3.rpt";
+	binaryLeakLimit = 0.0, sensorPercentOfTotalNodes = 0.01;
+char inputFile[50] = "Micropolis.inp";
+char reportFile[50] = "Micropolis.rpt";
 char directoryString[50] = "L1_Iterative/";
 char *nodesToIgnore[8] = {"10", "20", "40", "50", "60", "61", "601", "123"};
 //
 //
 
 int totalNodeCount, EPANETsimCounter;
-int *leakNodes, *sensorNodes, *MIPStartSolution;
+int *leakNodes, *sensorNodes, *MIPStartSolution, *isConstraintWorthy;
 double totalDemand, averageDelta, averagePreviousDelta, bigM = 99999,
 	totalTime, timePerIteration;
 double **baseCasePressureMatrix, *baseCaseDemand, **observedPressure,
@@ -53,6 +53,7 @@ void populateBMatrix(int);
 void randomizeLeaks(int, int);
 int setNumOfSensors(double);
 void divinePressureSensorLocations(int);
+int compare();
 void printLeakInfo(int);
 void analyzeBaseCase(int);
 void oneLeak(int, double, int, int);
@@ -61,7 +62,7 @@ void findHighestMagnitudes(double *);
 void calculateLeakDemand();
 void forgeMIPStartSolution(double[]);
 double calculateError(int, double[]);
-int writeSummaryFile(int, int, double, double[]);
+int writeSummaryFile(int, int, int, double, double[]);
 int writeRawResults(int, int, double[]);
 int writeLeakFile(int);
 int writeErrorFile();
@@ -103,10 +104,13 @@ int main(int argc, char *argv[])
 	double    objval = 999999;
 	
 	numOfPressureSensors = setNumOfSensors(sensorPercentOfTotalNodes);
-	printf("numOfPressureSensors = %d", numOfPressureSensors);
+	//printf("numOfPressureSensors = %d", numOfPressureSensors);
+	
+	
 	
 	leakNodes = (int *) calloc(numOfLeaks, sizeof(int));
 	sensorNodes = (int *) calloc(numOfPressureSensors, sizeof(int));
+	isConstraintWorthy = (int *) calloc(totalNodeCount, sizeof(int));
 	
 	baseCasePressureMatrix = (double **) calloc(numOfTimePoints, sizeof(double *));
 	for (i = 0; i < numOfTimePoints; i++)
@@ -184,6 +188,7 @@ int main(int argc, char *argv[])
  	//{
  		//printf("\n sensorNodes[%d] = %d", i, sensorNodes[i]);
  	//}
+ 	//getchar();
  	
 	//Create observation	
 	for (k = 0; k < iterations; k++)
@@ -207,10 +212,15 @@ int main(int argc, char *argv[])
 		
 		calculateLeakDemand();
 		
+		//for (i = 0; i < totalNodeCount; i++)
+		//{
+			//printf("\n\tisConstraintWorthy[%d] = %d", i, isConstraintWorthy[i]);
+		//}
+		
 		do{
 			
 			populateMatricies(totalNodeCount, numOfPressureSensors, sensorNodes);
-			writeAhat(k, "LP");		
+			//writeAhat(k, "LP");		
 			//printf("\n\n\tSEG FAULT TEST 9999\n");
 			// Create an empty model 		
  			error = GRBnewmodel(env, &model, "L1Approx", 0, NULL, NULL, NULL, NULL, 
@@ -235,30 +245,36 @@ int main(int argc, char *argv[])
 			// First constraint: Ax <= b						
 			for (i = 0; i < (totalNodeCount); i++)
 			{
-				for (j = 0; j < (totalNodeCount); j++)
+				if (isConstraintWorthy[i] == 1)
 				{
-					ind[j] = j;
-					val[j] = Ahat[i][j];			
-				}								
-				ind[totalNodeCount] = j + i;
-				val[totalNodeCount] = Ahat[i][j+i];
-				error = GRBaddconstr(model, (totalNodeCount + 1), ind, val, 
-					GRB_LESS_EQUAL, bhat[i],NULL);			
-				if (error) goto QUIT;
+					for (j = 0; j < (totalNodeCount); j++)
+					{
+						ind[j] = j;
+						val[j] = Ahat[i][j];			
+					}								
+					ind[totalNodeCount] = j + i;
+					val[totalNodeCount] = Ahat[i][j+i];
+					error = GRBaddconstr(model, (totalNodeCount + 1), ind, val, 
+						GRB_LESS_EQUAL, bhat[i],NULL);			
+					if (error) goto QUIT;
+				}
 			}
 			
 			for (i = totalNodeCount; i < (totalNodeCount * 2); i++)
 			{
-				for (j = 0; j < (totalNodeCount); j++)
+				if (isConstraintWorthy[i-totalNodeCount] == 1)
 				{
-					ind[j] = j;
-					val[j] = Ahat[i][j];			
-				}								
-				ind[totalNodeCount] = j + (i-totalNodeCount);
-				val[totalNodeCount] = Ahat[i][j+(i-totalNodeCount)];
-				error = GRBaddconstr(model, (totalNodeCount + 1), ind, val, 
-					GRB_LESS_EQUAL, bhat[i],NULL);			
-				if (error) goto QUIT;
+					for (j = 0; j < (totalNodeCount); j++)
+					{
+						ind[j] = j;
+						val[j] = Ahat[i][j];			
+					}								
+					ind[totalNodeCount] = j + (i-totalNodeCount);
+					val[totalNodeCount] = Ahat[i][j+(i-totalNodeCount)];
+					error = GRBaddconstr(model, (totalNodeCount + 1), ind, val, 
+						GRB_LESS_EQUAL, bhat[i],NULL);			
+					if (error) goto QUIT;
+				}
 			}
 			
 			error = GRBoptimize(model);
@@ -517,30 +533,36 @@ int main(int argc, char *argv[])
 			// First constraint: Ax <= b						
 			for (i = 0; i < (totalNodeCount); i++)
 			{
-				for (j = 0; j < (totalNodeCount); j++)
+				if (isConstraintWorthy[i] == 1)
 				{
-					ind[j] = j;
-					val[j] = Ahat[i][j];			
-				}								
-				ind[totalNodeCount] = j + i;
-				val[totalNodeCount] = Ahat[i][j+i];
-				error = GRBaddconstr(model, (totalNodeCount + 1), ind, val, 
-					GRB_LESS_EQUAL, bhat[i],NULL);			
-				if (error) goto QUIT;
+					for (j = 0; j < (totalNodeCount); j++)
+					{
+						ind[j] = j;
+						val[j] = Ahat[i][j];			
+					}								
+					ind[totalNodeCount] = j + i;
+					val[totalNodeCount] = Ahat[i][j+i];
+					error = GRBaddconstr(model, (totalNodeCount + 1), ind, val, 
+						GRB_LESS_EQUAL, bhat[i],NULL);			
+					if (error) goto QUIT;
+				}
 			}
 			
 			for (i = totalNodeCount; i < (totalNodeCount * 2); i++)
 			{
-				for (j = 0; j < (totalNodeCount); j++)
+				if (isConstraintWorthy[i-totalNodeCount] == 1)
 				{
-					ind[j] = j;
-					val[j] = Ahat[i][j];			
-				}								
-				ind[totalNodeCount] = j + (i-totalNodeCount);
-				val[totalNodeCount] = Ahat[i][j+(i-totalNodeCount)];
-				error = GRBaddconstr(model, (totalNodeCount + 1), ind, val, 
-					GRB_LESS_EQUAL, bhat[i],NULL);			
-				if (error) goto QUIT;
+					for (j = 0; j < (totalNodeCount); j++)
+					{
+						ind[j] = j;
+						val[j] = Ahat[i][j];			
+					}								
+					ind[totalNodeCount] = j + (i-totalNodeCount);
+					val[totalNodeCount] = Ahat[i][j+(i-totalNodeCount)];
+					error = GRBaddconstr(model, (totalNodeCount + 1), ind, val, 
+						GRB_LESS_EQUAL, bhat[i],NULL);			
+					if (error) goto QUIT;
+				}
 			}
 			
 			//Leak magnitude - (binary * bigM) <= 0
@@ -638,7 +660,7 @@ int main(int argc, char *argv[])
 				
 		printf("\nSolution Time: %.9f\n", timePerIteration);
 		
-		writeSummaryFile(k, optimstatus, objval, sol);
+		writeSummaryFile(k, optimstatus, numOfPressureSensors, objval, sol);
 		writeRawResults(k, optimstatus, sol);
 		writeLeakFile(k);
 				
@@ -662,6 +684,7 @@ int main(int argc, char *argv[])
 	
 	free(leakNodes);	
 	free(sensorNodes);
+	free(isConstraintWorthy);
 	
 	for (i = 0; i < numOfTimePoints; i++)
 	{
@@ -880,13 +903,13 @@ void populateBMatrix(int numNodes)
 		bhat[i] = b[i];
 		bhat[i + numNodes] = -b[i];
 	}
-	for (i = numNodes; i < (numNodes * 2); i++)
-	{
+	//for (i = numNodes; i < (numNodes * 2); i++)
+	//{
 		//bhat[i] = -b[i-numNodes];
-		printf("\t\t\t\tbhat[%d] = %f", i-numNodes, bhat[i-numNodes]);
-		printf("\tbhat[%d] = %f\n", i, bhat[i]);
-	}
-	getchar();
+		//printf("\t\t\t\tbhat[%d] = %f", i-numNodes, bhat[i-numNodes]);
+		//printf("\tbhat[%d] = %f\n", i, bhat[i]);
+	//}
+	//getchar();
 }
 
 //FUNCTION
@@ -1154,6 +1177,11 @@ void divinePressureSensorLocations(int numOfSensors)
 		sensorNodes[i] = 0;
 	}
 	
+	for (i = 0; i < totalNodeCount; i++)
+	{
+		isConstraintWorthy[i] = 0;
+	}
+	
 	if (numOfSensors == totalNodeCount)
 	{
 		for (i = 0; i < totalNodeCount; i++)
@@ -1200,8 +1228,64 @@ void divinePressureSensorLocations(int numOfSensors)
 			}
 		}				
 	}
+	qsort(sensorNodes, numOfSensors, sizeof(int), compare);
+	
+	for (i = 0; i < totalNodeCount; i++)
+	{
+		for (j = 0; j < numOfSensors; j++)
+		{
+			if (sensorNodes[j] == (i+1))
+			{
+				isConstraintWorthy[i] = 1;
+				break;
+			}
+		}
+		//printf("\n\tisConstraintWorthy[%d] = %d", i, isConstraintWorthy[i]);
+	}
+	//sortSensorLocations(numOfSensors);
+	//getchar();
 }
 
+int compare(const void * a, const void * b)
+{
+	return ( *(int *)a - *(int *)b );
+}
+/*
+void sortSensorLocations(int numOfSensors)
+{
+	int i, j, temp;
+	int *tempSort;
+	
+	i = j = temp = 0;
+	
+	tempSort = (int *) calloc(numOfSensors, sizeof(int));
+	
+	temp = sensorNodes[0];
+	tempSort[0] = temp;
+	
+	for (i = 0; i < numOfSensors - 1; i++)
+	{
+		for (j = 0; j < numOfSensors; j++)
+		{
+			if (sensorNodes[j] < tempSort[i])
+			{
+				temp = tempSort[i];
+				tempSort[i] = sensorNodes[j];
+				tempSort[i+1] = temp;
+			}			
+		}		 		
+	}
+	
+	for (i = 0; i < numOfSensors; i++)
+	{
+		printf("\n\tsorted sensors[%d] = %d", i, tempSort[i]);
+	}
+	getchar();
+	
+	free(tempSort);
+	
+}
+*/
 
 //FUNCTION
 //Print the location and magnitude of leaks
@@ -1594,7 +1678,7 @@ double calculateError(int numNodes, double solution[])
 
 //FUNCTION
 //Create an output file for each simulation/optimization run
-int writeSummaryFile(int k, int optimstatus, double objval, double sol[])
+int writeSummaryFile(int k, int optimstatus, int numOfSensors, double objval, double sol[])
 {	
 	char sequentialFile[100], buffer[10], name[10];
 	int i; 
@@ -1620,7 +1704,7 @@ int writeSummaryFile(int k, int optimstatus, double objval, double sol[])
 			i, leakNodes[i], name, leakMagnitudes[i] );										
 	}
 	
-	fprintf(ptr_file, "Delta:,%2.2f \n",delta);
+	fprintf(ptr_file, "No. Of Pressure Sensors:,%d \n",numOfSensors);
 	fprintf(ptr_file, "Total Demand: %f \n", totalDemand);
 	fprintf(ptr_file, "Run #, %d, Model Error:, %f \n", (k + 1), modelError[k]);
 	
