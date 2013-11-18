@@ -9,7 +9,7 @@
 
 #define SECONDS_PER_HOUR 3600
 #define SECONDS_PER_DAY 86400
-#define HOURS_PER_DAY 24
+
 #define WARMUP_PERIOD (259200 + (0 * 3600))
 
 //September 10, 2013
@@ -33,7 +33,7 @@ char *nodesToIgnore[8] = {"10", "20", "40", "50", "60", "61", "601", "123"};
 //
 
 long simDuration;
-int totalNodeCount, EPANETsimCounter, simulationLength;
+int totalNodeCount, EPANETsimCounter;
 int *leakNodes, *sensorNodes, *MIPStartSolution;
 double totalDemand, averageDelta, averagePreviousDelta, bigM = 99999,
 	totalTime, timePerIteration;
@@ -170,6 +170,7 @@ int main(int argc, char *argv[])
 		{
 			largeA[i][j] = (double *) calloc(totalNodeCount, sizeof(double));
 		}
+	}
 	
 	I = (double **) calloc(totalNodeCount, sizeof(double *));
 	for(i = 0; i < totalNodeCount; i++)
@@ -216,9 +217,9 @@ int main(int argc, char *argv[])
 		
 		randomizeLeaks(totalNodeCount, numOfLeaks);
  		
-		analyzeBaseCase(numOfPressureSensors, simDuration);
+		analyzeBaseCase(numOfPressureSensors);
 		
-		nLeaks(numOfLeaks, numOfPressureSensors, simDuration);										
+		nLeaks(numOfLeaks, numOfPressureSensors);										
 		
 		populateBMatrix(totalNodeCount);
 		
