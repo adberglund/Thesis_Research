@@ -21,7 +21,7 @@
 //	for number of leaks and number of simulations  
 //
 //
-int numOfLeaks = 2, iterations = 1, numOfTimePoints = 4, numOfNodesToIgnore = 8;	
+int numOfLeaks = 2, iterations = 20, numOfTimePoints = 12, numOfNodesToIgnore = 8;	
 double delta = 1, minLeakSize = 1.0, maxLeakSize = 10.0, minLeakThreshold =0.1,
 	binaryLeakLimit = 0.0, sensorPercentOfTotalNodes = 1.0;
 char inputFile[50] = "Net3.inp";
@@ -38,8 +38,8 @@ double totalDemand, averageDelta, averagePreviousDelta, bigM = 99999,
 double **baseCasePressureMatrix, *baseCaseDemand, **observedPressure,
 	*observedDemand, *coefficients, *b, *bhat,
 	*realLeakValues, *singleRunErrors, *leakDemands, *leakMagnitudes, 
-	*modelError, *LPobjectiveValues, *MIPobjectiveValues, *deltas, *previousDeltas, *leakGuesses,
-	***largePressureMatrix, **largeA, **Ahat,  **I, *lastLPSolution; 
+	*LPmodelError, *MIPmodelError, *LPobjectiveValues, *MIPobjectiveValues, *deltas, *previousDeltas, *leakGuesses,
+	***largePressureMatrix, **largeA, **Ahat,  **I, *lastLPSolution, *lastMIPSolution; 
 char globalDirName[100];
 clock_t startTime, endTime, iterationStartTime, iterationEndTime;
 
@@ -137,7 +137,8 @@ int main(int argc, char *argv[])
 	singleRunErrors = (double *) calloc(totalNodeCount, sizeof(double));
 	leakDemands = (double *) calloc(numOfLeaks, sizeof(double));
 	leakMagnitudes = (double *) calloc(numOfLeaks, sizeof(double));
-	modelError = (double *) calloc(iterations, sizeof(double));
+	LPmodelError = (double *) calloc(iterations, sizeof(double));
+	MIPmodelError = (double *) calloc(iterations, sizeof(double));
 	LPobjectiveValues = (double *) calloc(iterations, sizeof(double));
 	MIPobjectiveValues = (double *) calloc(iterations, sizeof(double));
 	deltas = (double *) calloc(totalNodeCount, sizeof(double));
@@ -173,6 +174,7 @@ int main(int argc, char *argv[])
 	}
 	
 	lastLPSolution = (double *) calloc((totalNodeCount * 2), sizeof(double));
+	lastMIPSolution = (double *) calloc((totalNodeCount * 3), sizeof(double));
 		 
 	// Create environment 
  	error = GRBloadenv(&env, "L1_Iterative.log");
@@ -197,6 +199,7 @@ int main(int argc, char *argv[])
 		
 		EPANETsimCounter = 0;
 		counter = 0;
+		objval = 999999;
 		
 		initializeArrays(numOfPressureSensors);
 		
@@ -646,9 +649,15 @@ int main(int argc, char *argv[])
 				//printf("\t\tMIP deltas[%d] = %f\n", i, deltas[i]);
 			}
 			//getchar();
-			
-			MIPobjectiveValues[k] = objval;
-			modelError[k] = calculateError(totalNodeCount, sol);
+			if ((objval - previousObjectiveValue) < 0)
+			{
+				MIPobjectiveValues[k] = objval;
+				for (i = 0; i < totalNodeCount * 2; i++)
+				{
+					lastMIPSolution[i] = sol[i];
+				}
+				
+			}			
 			
 			// Free model
 			GRBfreemodel(model);
@@ -661,6 +670,9 @@ int main(int argc, char *argv[])
 			/ CLOCKS_PER_SEC;
 				
 		printf("\nSolution Time: %.9f\n", timePerIteration);
+		
+		LPmodelError[k] = calculateError(totalNodeCount, lastLPSolution);
+		MIPmodelError[k] = calculateError(totalNodeCount, lastMIPSolution);
 		
 		writeSummaryFile(k, optimstatus, numOfPressureSensors, objval, sol);
 		writeRawResults(k, optimstatus, sol);
@@ -714,7 +726,8 @@ int main(int argc, char *argv[])
 	free(singleRunErrors);	
 	free(leakDemands);	
 	free(leakMagnitudes);	
-	free(modelError);	
+	free(LPmodelError);
+	free(MIPmodelError);	
 	free(LPobjectiveValues);
 	free(MIPobjectiveValues);
 	free(deltas);
@@ -749,7 +762,8 @@ int main(int argc, char *argv[])
 	}
 	free((void *)Ahat);
 
-	free((void *)lastLPSolution);	
+	free((void *)lastLPSolution);
+	free((void *)lastMIPSolution);	
 	
 	
 	
@@ -804,6 +818,11 @@ void initializeArrays(int numOfPressureSensors)
 	{
 		bhat[i] = 0;
 		lastLPSolution[i] = 0;		
+	}
+	
+	for (i = 0; i < (totalNodeCount * 3); i++)
+	{
+		lastMIPSolution[i] = 0;		
 	}
 	
 	for (i = 0; i < (totalNodeCount * 2); i++)
@@ -1708,7 +1727,8 @@ int writeSummaryFile(int k, int optimstatus, int numOfSensors, double objval, do
 	
 	fprintf(ptr_file, "No. Of Pressure Sensors:,%d \n",numOfSensors);
 	fprintf(ptr_file, "Total Demand: %f \n", totalDemand);
-	fprintf(ptr_file, "Run #, %d, Model Error:, %f \n", (k + 1), modelError[k]);
+	fprintf(ptr_file, "Run #, %d, LP Model Error:, %f, MIP Model Error:, %f\n", 
+		(k + 1), LPmodelError[k], MIPmodelError);
 	
 	for (i = 0; i < numOfLeaks; i++)
 	{
@@ -1825,17 +1845,17 @@ int writeErrorFile()
 	if (!ptr_file)
 		return 1;
 	
-	fprintf(ptr_file, "LP_Objective_Value,MIP_Objective_Value,Model_Error\n");
+	fprintf(ptr_file, "LP_Objective_Value,LP_Model_Error,MIP_Objective_Value,MIP_Model_Error\n");
 	
 	for (i = 0; i < (iterations - 1); i++)
 	{
-		fprintf(ptr_file, "%f,%f,%f\n", LPobjectiveValues[i],MIPobjectiveValues[i],
-			modelError[i]);										
+		fprintf(ptr_file, "%f,%f,%f,%f\n", LPobjectiveValues[i],LPmodelError[i],
+			MIPobjectiveValues[i], MIPmodelError[i]);										
 	}
 	for (i = (iterations - 1); i < iterations; i++)
 	{
-		fprintf(ptr_file, "%f,%f,%f", LPobjectiveValues[i],MIPobjectiveValues[i],
-			modelError[i]);										
+		fprintf(ptr_file, "%f,%f,%f,%f", LPobjectiveValues[i],LPmodelError[i],
+			MIPobjectiveValues[i], MIPmodelError[i]);										
 	}
 	
 	fclose(ptr_file);
@@ -1917,7 +1937,7 @@ int writeAhat(int k, char *version)
 int setOutputDirectory()
 {
 	int status;
-	char dirName[100], date[25];
+	char dirName[100], date[25], buffer[10];
 	
 	time_t seconds;
 	struct tm *time_struct;
@@ -1932,6 +1952,12 @@ int setOutputDirectory()
 	strftime(date, 50, "%Y_%m_%d", time_struct);
 	strcat(dirName, date);
 	status = mkdir(dirName, S_IRWXU | S_IRWXG | S_IRWXO);
+	sprintf(buffer,"%d",numOfTimePoints);
+	strcat(dirName, "/");
+	strcat(dirName, buffer);
+	strcat(dirName, "hourPeriod");
+	status = mkdir(dirName, S_IRWXU | S_IRWXG | S_IRWXO);
+	strcpy(globalDirName, dirName);
 	
 	strcpy(globalDirName, dirName);
 	
