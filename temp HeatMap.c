@@ -881,7 +881,7 @@ void initializeArrays(int numOfPressureSensors)
 	
 }
 
-void populateBMatrix(int numNodes)
+void populateBMatrix(int currentPeriod, int numNodes)
 {
 	int i, j;
 	
@@ -890,21 +890,18 @@ void populateBMatrix(int numNodes)
 	i = j = 0;
 	
 	
-	for (i = 0; i < numPeriodsPerSimulation; i++)
+	
+	for (i = 0; i < numNodes; i++)
 	{
-		for (j = 0; j < numNodes; j++)
-		{
-			b[i][j] = 0;
-		}
+		b[currentPeriod][i] = 0;
 	}
 	
-	for (i = 0; i < numPeriodsPerSimulation; i++)
+	
+	for (i = 0; i < (numNodes * 2); i++)
 	{
-		for (j = 0; j < (numNodes * 2); j++)
-		{
-			bhat[i][j] = 0;
-		}
+		bhat[currentPeriod][i] = 0;
 	}
+
 	
 	//for (i = 0; i < numNodes; i++)
 	//{
@@ -917,36 +914,33 @@ void populateBMatrix(int numNodes)
 	//}
 	
 	//Update b matrix
-	for (k = 0; k < numPeriodsPerSimulation; k++)
-	{
+	
 		for (i = 0; i < numOfHours; i++)
 		{
 			for (j = 0; j < numNodes; j++)
 			{
-				b[k][j] += (baseCasePressureMatrix[k][i][j] - observedPressure[k][i][j]);	
+				b[currentPeriod][j] += (baseCasePressureMatrix[currentPeriod][i][j] - observedPressure[currentPeriod][i][j]);	
 				//printf("b[%d] = %f\n",i,b[i]);
 			}
 		}
 	}
-	for (k = 0; k < numPeriodsPerSimulation; k++)
+	
+	for (i = 0; i < numNodes; i++)
 	{
-		for (i = 0; i < numNodes; i++)
-		{
-			b[k][i] = b[k][i] / numOfHours;		
-			//printf("b[%d] = %f\n", j, b[j]);
-		}
+		b[currentPeriod][i] = b[currentPeriod][i] / numOfHours;		
+		//printf("b[%d] = %f\n", j, b[j]);
 	}
+
 	//getchar();
 	
 	//Create b-hat
-	for (k = 0; k < numPeriodsPerSimulation; k++)
+	
+	for (i = 0; i < numNodes; i++)
 	{
-		for (i = 0; i < numNodes; i++)
-		{
-			bhat[k][i] = b[k][i];
-			bhat[k][i + numNodes] = -b[k][i];
-		}
+		bhat[currentPeriod][i] = b[currentPeriod][i];
+		bhat[currentPeriod][i + numNodes] = -b[currentPeriod][i];
 	}
+	
 	//for (i = numNodes; i < (numNodes * 2); i++)
 	//{
 		//bhat[i] = -b[i-numNodes];
@@ -1020,17 +1014,15 @@ void populateMatricies(int currentPeriod, int numNodes, int numOfPressureSensors
 			}
 		}
 	}
-	
-	for (k = 0; k < numPeriodsPerSimulation; k++)
+
+	for (i = 0; i < totalNodeCount; i++)
 	{
-		for (i = 0; i < totalNodeCount; i++)
-		{
-			for (j = 0; j < totalNodeCount; j++)
-			{	
-				largeA[k][i][j] = 0;
-			}
+		for (j = 0; j < totalNodeCount; j++)
+		{	
+			largeA[currentPeriod][i][j] = 0;
 		}
 	}
+	
 	/*
 	for (i = 0; i < totalNodeCount; i++)
 	{
@@ -1075,7 +1067,7 @@ void populateMatricies(int currentPeriod, int numNodes, int numOfPressureSensors
 		{
 			//if (deltas[j] != 0)
 			//{
-				largeA[i][j] = largeA[i][j] / (numOfHours); // / delta;
+				largeA[currentPeriod][i][j] = largeA[currentPeriod][i][j] / (numOfHours); // / delta;
 			//}
 		}			
 	}
@@ -1100,28 +1092,28 @@ void populateMatricies(int currentPeriod, int numNodes, int numOfPressureSensors
 	{
 		for(j = 0; j < numNodes; j++)
 		{
-			Ahat[i][j] =  largeA[i][j];
+			Ahat[currentPeriod][i][j] =  largeA[currentPeriod][i][j];
 		}
 	}
 	for(i = numNodes; i < (numNodes * 2); i++)
 	{
 		for(j = 0; j < numNodes; j++)
 		{
-			Ahat[i][j] = -largeA[i-numNodes][j];
+			Ahat[currentPeriod][i][j] = -largeA[currentPeriod][i-numNodes][j];
 		}
 	}
 	for(i = 0; i < numNodes; i++)
 	{
 		for(j = numNodes; j < (numNodes * 2); j++)
 		{
-			Ahat[i][j] = -I[i][j-numNodes];
+			Ahat[currentPeriod][i][j] = -I[i][j-numNodes];
 		}
 	}
 	for(i = numNodes; i < (numNodes * 2); i++)
 	{
 		for(j = numNodes; j < (numNodes * 2); j++)
 		{
-			Ahat[i][j] = -I[i-numNodes][j-numNodes];
+			Ahat[currentPeriod][i][j] = -I[i-numNodes][j-numNodes];
 		}
 	}
 	
@@ -1515,9 +1507,9 @@ void oneLeak(int index, double emitterCoeff, int sensorCount, int columnNumber, 
 
 //FUNCTION
 //Generalized multi-leak simulator
-void nLeaks(int leakCount, int sensorCount) 
+void nLeaks(int leakCount, int sensorCount, int currentPeriod) 
 {
-	long t, tstep, hydraulicTimeStep, duration;	
+	long t, tstep, hydraulicTimeStep, duration, warmUpExtension;	
 	float pressure, baseDemand, demand;
 	int i, j, currentTime, compareResult;
 	char name[20];
@@ -1525,14 +1517,14 @@ void nLeaks(int leakCount, int sensorCount)
 	i = j = currentTime = 0;
 	totalDemand = pressure = baseDemand = demand = 0.0;
 	EPANETsimCounter++;
-	
+	warmUpExtension = (numOfHours * currentPeriod * 3600);
 		
 	for (i = 0; i < numOfHours; i++)
 	{
 		for (j = 0; j <= totalNodeCount; j++)
 		{
-			observedPressure[i][j] = 0;
-			observedDemand[j] = 0;
+			observedPressure[currentPeriod][i][j] = 0;
+			observedDemand[currentPeriod][j] = 0;
 		}
 	}
 	
@@ -1562,7 +1554,7 @@ void nLeaks(int leakCount, int sensorCount)
 	do 
 	{  	
 		ENrunH(&t);
-		if (t%hydraulicTimeStep == 0 && t >= WARMUP_PERIOD
+		if (t%hydraulicTimeStep == 0 && t >= (WARMUP_PERIOD + warmUpExtension)
 			&& currentTime < numOfHours)
 		{
 			for (i = 0; i < sensorCount; i++)
@@ -1579,7 +1571,7 @@ void nLeaks(int leakCount, int sensorCount)
 				if (compareResult != 0)
 				{
 					ENgetnodevalue(sensorNodes[i], EN_PRESSURE, &pressure);																
-					observedPressure[currentTime][sensorNodes[i]-1] = pressure;								
+					observedPressure[currentPeriod][currentTime][sensorNodes[i]-1] = pressure;								
 					//printf("%f\t",demand);
 				}
 				
@@ -1587,7 +1579,7 @@ void nLeaks(int leakCount, int sensorCount)
 			for (i = 1; i <= totalNodeCount; i++)
 			{
 				ENgetnodevalue(i, EN_DEMAND, &demand);
-				observedDemand[i-1] += demand;
+				observedDemand[currentPeriod][i-1] += demand;
 			}
 			
 			//for (i = 0; i < leakCount; i++)
@@ -1613,7 +1605,7 @@ void nLeaks(int leakCount, int sensorCount)
 	for (i=1; i <= totalNodeCount; i++)
 	{
 		//observedPressure[i-1] = observedPressure[i-1] / numOfHours;
-		observedDemand[i-1] = observedDemand[i-1] / numOfHours;
+		observedDemand[currentPeriod][i-1] = observedDemand[currentPeriod][i-1] / numOfHours;
 		//printf("\tnode %d observed demand = %f\n", i, observedDemand[i-1]);
 		//ENgetnodeid(i, name);
 		//printf("observed pressure @ node %s = %f\n", name, observedPressure[i-1]);
@@ -1676,7 +1668,7 @@ void forgeMIPStartSolution(int currentPeriod, double sol[])
 	
 }
 
-void calculateLeakDemand()
+void calculateLeakDemand(int currentPeriod)
 {
 	int i, j;
 	
@@ -1685,7 +1677,7 @@ void calculateLeakDemand()
 
 	for (i = 0; i < numOfLeaks; i++)
 	{
-		leakDemands[i] = observedDemand[leakNodes[i] - 1] - baseCaseDemand[leakNodes[i] - 1];
+		leakDemands[i] = observedDemand[currentPeriod][leakNodes[i] - 1] - baseCaseDemand[currentPeriod][leakNodes[i] - 1];
 		//printf("\t\tleakDemands[%d] = %f\n", leakNodes[i], leakDemands[i]);		
 	}
 		
