@@ -22,7 +22,7 @@
 //	for number of leaks and number of simulations  
 //
 //
-int numOfLeaks = 2, iterations = 1, numOfHours = 3, numOfNodesToIgnore = 8;	
+int numOfLeaks = 2, iterations = 50, numOfHours = 12, numOfNodesToIgnore = 8;	
 double delta = 1, minLeakSize = 1.0, maxLeakSize = 10.0, minLeakThreshold =0.5,
 	binaryLeakLimit = 0.0, sensorPercentOfTotalNodes = 1.0,
 	numPeriodsPerSimulation;
@@ -36,12 +36,12 @@ char *nodesToIgnore[8] = {"10", "20", "40", "50", "60", "61", "601", "123"};
 long simDuration;
 int totalNodeCount, EPANETsimCounter;
 int *leakNodes, *sensorNodes, **MIPStartSolution, *isConstraintWorthy;
-double totalDemand, averageDelta, averagePreviousDelta, bigM = 99999,
+double totalDemand, averageDelta, averagePreviousDelta, bigM = 999,
 	totalTime, timePerIteration;
 double ***baseCasePressureMatrix, **baseCaseDemand, ***observedPressure,
 	**observedDemand, *coefficients, **b, **bhat,
 	*realLeakValues, *singleRunErrors, *leakDemands, *leakMagnitudes, 
-	*modelError, **deltas, *previousDeltas, *leakGuesses, 
+	**LPmodelError, **MIPmodelError, **deltas, *previousDeltas, *leakGuesses, 
 	***largePressureMatrix, ***largeA, ***Ahat,  **I, **LPobjectiveValues, 
 	**MIPobjectiveValues,  **LPSolutions, **MIPSolutions, *LPHeatMap, 
 	*MIPHeatMap, *LPWeightedHeatMap, *MIPWeightedHeatMap; 
@@ -52,7 +52,7 @@ clock_t startTime, endTime, iterationStartTime, iterationEndTime;
 FILE *ptr_file;
 
 
-void initializeArrays(int);
+void initializeArrays(int, int);
 void populateMatricies(int, int, int, int *);
 void populateBMatrix(int, int);
 void randomizeLeaks(int, int);
@@ -66,9 +66,9 @@ void nLeaks(int, int, int);
 void findHighestMagnitudes(double *);
 void calculateLeakDemand(int);
 void forgeMIPStartSolution(int, double[]);
-double calculateError(int, double[]);
+double calculateError(int, int, double **);
 int makeHeatMap(int);
-int writeIndividualSolutions(int);
+int writeIndividualSolutions(int, double **, char *);
 int writeSummaryFile(int, int, int, double, double[]);
 int writeRawResults(int, int, double[]);
 int writeLeakFile(int);
@@ -183,7 +183,18 @@ int main(int argc, char *argv[])
 	singleRunErrors = (double *) calloc(totalNodeCount, sizeof(double));
 	leakDemands = (double *) calloc(numOfLeaks, sizeof(double));
 	leakMagnitudes = (double *) calloc(numOfLeaks, sizeof(double));
-	modelError = (double *) calloc(iterations, sizeof(double));	
+	LPmodelError = (double **) calloc(iterations, sizeof(double *));
+	for (i = 0; i < iterations; i++)
+	{
+		LPmodelError[i] = (double *) calloc(numPeriodsPerSimulation, sizeof(double));
+	}
+	
+	MIPmodelError = (double **) calloc(iterations, sizeof(double *));	
+	for (i = 0; i < iterations; i++)
+	{
+		MIPmodelError[i] = (double *) calloc(numPeriodsPerSimulation, sizeof(double));
+	}
+	
 	
 	deltas = (double **) calloc(numPeriodsPerSimulation, sizeof(double *));
 	for (i = 0; i < numPeriodsPerSimulation; i ++)
@@ -288,7 +299,7 @@ int main(int argc, char *argv[])
 		counter = 0;
 		periodCount = 0;
 		
-		initializeArrays(numOfPressureSensors);
+		initializeArrays(numOfPressureSensors, k);
 		
 		randomizeLeaks(totalNodeCount, numOfLeaks);
 		
@@ -460,6 +471,7 @@ int main(int argc, char *argv[])
 		
 			//Reset the objval to a high value to give MIP a chance to iterate
 			objval = 999999;
+			MIPCounter = 0;
 			//periodCount = 0;
 			
 			//Run MIP Polishing Step
@@ -610,20 +622,25 @@ int main(int argc, char *argv[])
 					//printf("\t\tMIP deltas[%d] = %f\n", i, deltas[i]);
 				}
 				//getchar();
-				
-				for (i = 0; i < totalNodeCount * 2; i++)
+				if ((objval - previousObjectiveValue) < 0)
 				{
-					MIPSolutions[periodCount][i] = sol[i];
-				}
-				
-				MIPobjectiveValues[k][periodCount] = objval;
-				modelError[k] = calculateError(totalNodeCount, sol);
+					for (i = 0; i < totalNodeCount * 2; i++)
+					{
+						MIPSolutions[periodCount][i] = sol[i];
+					}				
+					MIPobjectiveValues[k][periodCount] = objval;
+				}				
 				
 				// Free model
 				GRBfreemodel(model);
 				MIPCounter++;
 				
 			}while((objval - previousObjectiveValue) < 0);		
+			
+			LPmodelError[k][periodCount] = calculateError(totalNodeCount, 
+				periodCount, LPSolutions);
+			MIPmodelError[k][periodCount] = calculateError(totalNodeCount, 
+				periodCount, MIPSolutions);
 			
 			periodCount++;
 		
@@ -633,17 +650,18 @@ int main(int argc, char *argv[])
 		timePerIteration = ((double)(iterationEndTime - iterationStartTime))
 			/ CLOCKS_PER_SEC;
 				
-		printf("\nSolution Time: %.9f\n", timePerIteration);
+		printf("\nSolution Time: %.9f\n", timePerIteration);				
 		
-		makeHeatMap(k);
+		//makeHeatMap(k);
 		//writeSummaryFile(k, optimstatus, numOfPressureSensors, objval, sol);
 		//writeRawResults(k, optimstatus, sol);
 		writeLeakFile(k);
-		writeIndividualSolutions(k);
+		writeIndividualSolutions(k, LPSolutions, "LP");
+		writeIndividualSolutions(k, MIPSolutions, "MIP");
 				
 	}
 	
-	//writeErrorFile();
+	writeErrorFile();
 	
 	/*
 	for (i = 0; i < totalNodeCount; i++) 
@@ -729,7 +747,14 @@ int main(int argc, char *argv[])
 	free(singleRunErrors);	
 	free(leakDemands);	
 	free(leakMagnitudes);	
-	free(modelError);		
+	
+	for (i = 0; i < iterations; i++)
+	{
+		free((void *)LPmodelError[i]);
+		free((void *)MIPmodelError[i]);
+	}
+	free((void *)LPmodelError);
+	free((void *)MIPmodelError);
 	
 	for (i = 0; i < numPeriodsPerSimulation; i ++)
 	{
@@ -841,7 +866,7 @@ int main(int argc, char *argv[])
 
 //FUNCTION
 //Initialze various arrays to be populated during simulation
-void initializeArrays(int numOfPressureSensors)
+void initializeArrays(int numOfPressureSensors, int currentRun)
 {
 	int i, j, k;	
 	i = j = k = 0;
@@ -882,22 +907,26 @@ void initializeArrays(int numOfPressureSensors)
 		coefficients[i] = 0;		
 	}
 	
-	for (i = 0; i < numPeriodsPerSimulation; i++)
+	if (currentRun == 0)
 	{
-		for (j = 0; j < (totalNodeCount * 2); j++)
+		for (i = 0; i < numPeriodsPerSimulation; i++)
 		{
-			LPSolutions[i][j] = 0;
-			MIPSolutions[i][j] = 0;			
-		}
-	}
+			for (j = 0; j < (totalNodeCount * 2); j++)
+			{
+				LPSolutions[i][j] = 0;
+				MIPSolutions[i][j] = 0;			
+			}
+		}	
 	
-	for (i = 0; i < iterations; i++)
-	{
-		for (j = 0; j < numPeriodsPerSimulation; j++)
+		for (i = 0; i < iterations; i++)
 		{
-			LPobjectiveValues[i][j] = 0;
-			MIPobjectiveValues[i][j] = 0;			
+			for (j = 0; j < numPeriodsPerSimulation; j++)
+			{
+				LPobjectiveValues[i][j] = 0;
+				MIPobjectiveValues[i][j] = 0;			
+			}
 		}
+	
 	}
 	
 	for (k = 0; k < numOfHours; k++)
@@ -1774,7 +1803,7 @@ void calculateLeakDemand(int currentPeriod)
 
 //FUNCTION
 //Sum model error
-double calculateError(int numNodes, double solution[])
+double calculateError(int numNodes, int currentPeriod, double **solution)
 {
 	double errorSum;
 	int i;
@@ -1791,7 +1820,7 @@ double calculateError(int numNodes, double solution[])
 	
 	for (i = 0; i < numNodes; i++)
 	{
-		singleRunErrors[i] = fabs(realLeakValues[i] - solution[i]);
+		singleRunErrors[i] = fabs(realLeakValues[i] - solution[currentPeriod][i]);
 		
 		//printf("node %d model error %f \n", (i+1), singleRunErrors[i]);
 		errorSum += singleRunErrors[i];
@@ -1934,17 +1963,19 @@ int makeHeatMap(int currentRun)
 	return 0;	
 }
 
-int writeIndividualSolutions(int currentRun)
+int writeIndividualSolutions(int currentRun, double **solutions, char *method)
 {	
-	int i, j;
+	int i, j, timeBlock;
 	char sequentialFile[150], buffer[10], name[10];
 	
-	i = j = 0;	
+	i = j = timeBlock = 0;	
 	
 	//Create CSV file for each time period's solutions
 	sequentialFile[0] = '\0';
 	strcat(sequentialFile, globalDirName);
-	strcat(sequentialFile, "/IndividualResults_");
+	strcat(sequentialFile, "/R_");
+	strcat(sequentialFile, method);
+	strcat(sequentialFile, "_IndividualResults_");
 	sprintf(buffer,"%d",currentRun);
 	strcat(sequentialFile, buffer);
 	strcat(sequentialFile, ".csv");
@@ -1952,7 +1983,7 @@ int writeIndividualSolutions(int currentRun)
 	ptr_file = fopen(sequentialFile, "w");
 	if (!ptr_file)
 		return 1;
-	
+	/*
 	fprintf(ptr_file, ",LP_Objectives_");
 	for (i = 0; i < numPeriodsPerSimulation; i++)
 	{
@@ -1973,32 +2004,50 @@ int writeIndividualSolutions(int currentRun)
 		fprintf(ptr_file, "%f,", MIPobjectiveValues[currentRun][i]);
 	}	
 	fprintf(ptr_file, "\n\n");
-	
-	fprintf(ptr_file, ",LP_Solutions_");
+	*/
+	fprintf(ptr_file, ",");
 	for (i = 0; i < numPeriodsPerSimulation; i++)
 	{
-		fprintf(ptr_file, "%d,", i);
+		fprintf(ptr_file, "%d-", timeBlock);
+		timeBlock = timeBlock + numOfHours;
+		fprintf(ptr_file, "%d,", timeBlock);
 	}
+	fprintf(ptr_file, "\n");
+	/*
 	fprintf(ptr_file, "MIP_Solutions_");
 	for (i = 0; i < numPeriodsPerSimulation; i++)
 	{
 		fprintf(ptr_file, "%d,", i);
 	}
 	fprintf(ptr_file, "\n");
-
-	for (i = 0; i < totalNodeCount; i++)
+	*/
+	
+	for (i = 0; i < totalNodeCount - 1; i++)
 	{
 		ENgetnodeid(i+1, name);		
 		fprintf(ptr_file, "%s,", name);
 		for (j = 0; j < numPeriodsPerSimulation; j++)
 		{
-			fprintf(ptr_file, "%f,", LPSolutions[j][i]);			
+			fprintf(ptr_file, "%f,", solutions[j][i]);			
 		}
+		fprintf(ptr_file, "\n");
+		/*
 		for (j = 0; j < numPeriodsPerSimulation; j++)
 		{
 			fprintf(ptr_file, "%f,", MIPSolutions[j][i]);			
 		}
 		fprintf(ptr_file, "\n");
+		*/
+	}
+	
+	for (i = totalNodeCount - 1; i < totalNodeCount; i++)
+	{
+		ENgetnodeid(i+1, name);		
+		fprintf(ptr_file, "%s,", name);
+		for (j = 0; j < numPeriodsPerSimulation; j++)
+		{
+			fprintf(ptr_file, "%f,", solutions[j][i]);			
+		}		
 	}
 
 	fclose(ptr_file);
@@ -2015,7 +2064,8 @@ int writeIndividualSolutions(int currentRun)
 //FUNCTION
 //Create an output file for each simulation/optimization run
 int writeSummaryFile(int k, int optimstatus, int numOfSensors, double objval, double sol[])
-{	
+{
+	/*	
 	char sequentialFile[100], buffer[10], name[10];
 	int i; 
 	
@@ -2080,6 +2130,7 @@ int writeSummaryFile(int k, int optimstatus, int numOfSensors, double objval, do
 	}c
 	
 	fclose(ptr_file);
+	*/
 	return 0;
 }
 
@@ -2088,6 +2139,7 @@ int writeSummaryFile(int k, int optimstatus, int numOfSensors, double objval, do
 //Create an output file for each simulation/optimization run
 int writeRawResults(int k, int optimstatus, double sol[])
 {	
+	/*
 	char sequentialFile[100], buffer[10], name[20];
 	int i, j; //compareResult; 
 	
@@ -2137,6 +2189,7 @@ int writeRawResults(int k, int optimstatus, double sol[])
 	}
 	
 	fclose(ptr_file);
+	*/
 	return 0;
 }
 
@@ -2145,11 +2198,13 @@ int writeRawResults(int k, int optimstatus, double sol[])
 //Create an output file for each set of iterations
 int writeErrorFile()
 {	
-	char sequentialFile[100];
+	char sequentialFile[150];
 	int i, j; 
-	
+	double averageLPObj, averageMIPObj, averageLPModelError, averageMIPModelError;
 	i = j = 0;	
+	averageLPObj = averageMIPObj = averageLPModelError = averageMIPModelError = 0.0;
 	
+	/*
 	//Create summary CSV file for each set of leaks
 	sequentialFile[0] = '\0';
 	strcat(sequentialFile, globalDirName);
@@ -2159,23 +2214,284 @@ int writeErrorFile()
 	if (!ptr_file)
 		return 1;
 	
-	fprintf(ptr_file, "LP_Objective_Value,MIP_Objective_Value,Model_Error\n");
+	fprintf(ptr_file, "Run_#,,");
+	
+	for (i = 0; i < numPeriodsPerSimulation; i++)
+	{
+		fprintf(ptr_file, "Time_%d,", i);
+	}
+	fprintf(ptr_file, "Average\n");
+	
+	//fprintf(ptr_file, "LP_Objective_Value,MIP_Objective_Value,Model_Error\n");
 	
 	for (i = 0; i < (iterations - 1); i++)
 	{
+		averageLPObj = averageMIPObj = averageLPModelError = averageMIPModelError = 0.0;
+		fprintf(ptr_file, "%d,",i);
+		fprintf(ptr_file, "LP_objective,");
 		for (j = 0; j < numPeriodsPerSimulation; j++)
 		{
-			fprintf(ptr_file, "%f,", LPobjectiveValues[i],MIPobjectiveValues[i],
-				modelError[i]);	
+			fprintf(ptr_file, "%f,", LPobjectiveValues[i][j]);
+			averageLPObj += LPobjectiveValues[i][j];
 		}
+		averageLPObj = averageLPObj / numPeriodsPerSimulation;
+		fprintf(ptr_file, "%f\n,LP_solution_error,", averageLPObj);
+		for (j = 0; j < numPeriodsPerSimulation; j++)
+		{
+			fprintf(ptr_file, "%f,", LPmodelError[i][j]);
+			averageLPModelError += LPmodelError[i][j];
+		}
+		averageLPModelError = averageLPModelError / numPeriodsPerSimulation;
+		fprintf(ptr_file, "%f\n,MIP_objective,", averageLPModelError);
+		for (j = 0; j < numPeriodsPerSimulation; j++)
+		{
+			fprintf(ptr_file, "%f,", MIPobjectiveValues[i][j]);	
+			averageMIPObj += MIPobjectiveValues[i][j];
+		}
+		averageMIPObj = averageMIPObj / numPeriodsPerSimulation;
+		fprintf(ptr_file, "%f\n,MIP_solution_error,", averageMIPObj);
+		for (j = 0; j < numPeriodsPerSimulation; j++)
+		{
+			fprintf(ptr_file, "%f,", MIPmodelError[i][j]);
+			averageMIPModelError += MIPmodelError[i][j];
+		}
+		averageMIPModelError = averageMIPModelError / numPeriodsPerSimulation;
+		fprintf(ptr_file, "%f\n", averageMIPModelError);		
 	}
 	for (i = (iterations - 1); i < iterations; i++)
 	{
-		fprintf(ptr_file, "%f,%f,%f", LPobjectiveValues[i],MIPobjectiveValues[i],
-			modelError[i]);										
+		averageLPObj = averageMIPObj = averageLPModelError = averageMIPModelError = 0.0;
+		fprintf(ptr_file, "%d,",i);
+		fprintf(ptr_file, "LP_objective,");
+		for (j = 0; j < numPeriodsPerSimulation; j++)
+		{
+			fprintf(ptr_file, "%f,", LPobjectiveValues[i][j]);
+			averageLPObj += LPobjectiveValues[i][j];
+		}
+		fprintf(ptr_file, "%f\n,LP_solution_error,", averageLPObj);
+		for (j = 0; j < numPeriodsPerSimulation; j++)
+		{
+			fprintf(ptr_file, "%f,", LPmodelError[i][j]);
+			averageLPModelError += LPmodelError[i][j];
+		}
+		fprintf(ptr_file, "%f\n,MIP_objective,", averageLPModelError);
+		for (j = 0; j < numPeriodsPerSimulation; j++)
+		{
+			fprintf(ptr_file, "%f,", MIPobjectiveValues[i][j]);	
+			averageMIPObj += MIPobjectiveValues[i][j];
+		}
+		fprintf(ptr_file, "%f\n,MIP_solution_error,", averageMIPObj);
+		for (j = 0; j < numPeriodsPerSimulation; j++)
+		{
+			fprintf(ptr_file, "%f,", MIPmodelError[i][j]);
+			averageMIPModelError += MIPmodelError[i][j];
+		}
+		fprintf(ptr_file, "%f", averageMIPModelError);						
 	}
 	
 	fclose(ptr_file);
+	*/
+	
+	//LP Objectives
+	
+	//Create summary CSV file for each set of leaks
+	sequentialFile[0] = '\0';
+	strcat(sequentialFile, globalDirName);
+	strcat(sequentialFile, "/E_LP_objectives.csv");
+	
+	ptr_file = fopen(sequentialFile, "w");
+	if (!ptr_file)
+		return 1;
+	
+	fprintf(ptr_file, "Run_#,");
+	
+	for (i = 0; i < numPeriodsPerSimulation; i++)
+	{
+		fprintf(ptr_file, "Time_%d,", i);
+	}
+	fprintf(ptr_file, "Average\n");
+	
+	//fprintf(ptr_file, "LP_Objective_Value,MIP_Objective_Value,Model_Error\n");
+	
+	for (i = 0; i < (iterations - 1); i++)
+	{
+		averageLPObj = averageMIPObj = averageLPModelError = averageMIPModelError = 0.0;
+		fprintf(ptr_file, "%d,",i);		
+		
+		for (j = 0; j < numPeriodsPerSimulation; j++)
+		{
+			fprintf(ptr_file, "%f,", LPobjectiveValues[i][j]);
+			averageLPObj += LPobjectiveValues[i][j];
+		}
+		averageLPObj = averageLPObj / numPeriodsPerSimulation;
+		fprintf(ptr_file, "%f\n", averageLPObj);				
+	}
+	
+	for (i = (iterations - 1); i < iterations; i++)
+	{
+		averageLPObj = averageMIPObj = averageLPModelError = averageMIPModelError = 0.0;
+		fprintf(ptr_file, "%d,",i);		
+		
+		for (j = 0; j < numPeriodsPerSimulation; j++)
+		{
+			fprintf(ptr_file, "%f,", LPobjectiveValues[i][j]);
+			averageLPObj += LPobjectiveValues[i][j];
+		}
+		averageLPObj = averageLPObj / numPeriodsPerSimulation;
+		fprintf(ptr_file, "%f", averageLPObj);								
+	}
+	
+	fclose(ptr_file);
+	
+	
+	//LP Solution Error
+	
+	//Create summary CSV file for each set of leaks
+	sequentialFile[0] = '\0';
+	strcat(sequentialFile, globalDirName);
+	strcat(sequentialFile, "/E_LP_solution_error.csv");
+	
+	ptr_file = fopen(sequentialFile, "w");
+	if (!ptr_file)
+		return 1;
+	
+	fprintf(ptr_file, "Run_#,");
+	
+	for (i = 0; i < numPeriodsPerSimulation; i++)
+	{
+		fprintf(ptr_file, "Time_%d,", i);
+	}
+	fprintf(ptr_file, "Average\n");
+		
+	
+	for (i = 0; i < (iterations - 1); i++)
+	{
+		averageLPObj = averageMIPObj = averageLPModelError = averageMIPModelError = 0.0;
+		fprintf(ptr_file, "%d,",i);				
+		for (j = 0; j < numPeriodsPerSimulation; j++)
+		{
+			fprintf(ptr_file, "%f,", LPmodelError[i][j]);
+			averageLPModelError += LPmodelError[i][j];
+		}
+		averageLPModelError = averageLPModelError / numPeriodsPerSimulation;
+		fprintf(ptr_file, "%f\n", averageLPModelError);				
+	}
+	
+	for (i = (iterations - 1); i < iterations; i++)
+	{
+		averageLPObj = averageMIPObj = averageLPModelError = averageMIPModelError = 0.0;
+		fprintf(ptr_file, "%d,",i);		
+		
+		for (j = 0; j < numPeriodsPerSimulation; j++)
+		{
+			fprintf(ptr_file, "%f,", LPmodelError[i][j]);
+			averageLPModelError += LPmodelError[i][j];
+		}
+		averageLPModelError = averageLPModelError / numPeriodsPerSimulation;
+		fprintf(ptr_file, "%f", averageLPModelError);								
+	}
+	
+	fclose(ptr_file);
+	
+	
+	//MIP Objectives
+	
+	//Create summary CSV file for each set of leaks
+	sequentialFile[0] = '\0';
+	strcat(sequentialFile, globalDirName);
+	strcat(sequentialFile, "/E_MIP_objectives.csv");
+	
+	ptr_file = fopen(sequentialFile, "w");
+	if (!ptr_file)
+		return 1;
+	
+	fprintf(ptr_file, "Run_#,");
+	
+	for (i = 0; i < numPeriodsPerSimulation; i++)
+	{
+		fprintf(ptr_file, "Time_%d,", i);
+	}
+	fprintf(ptr_file, "Average\n");		
+	
+	for (i = 0; i < (iterations - 1); i++)
+	{
+		averageLPObj = averageMIPObj = averageLPModelError = averageMIPModelError = 0.0;
+		fprintf(ptr_file, "%d,",i);		
+		
+		for (j = 0; j < numPeriodsPerSimulation; j++)
+		{
+			fprintf(ptr_file, "%f,", MIPobjectiveValues[i][j]);	
+			averageMIPObj += MIPobjectiveValues[i][j];
+		}
+		averageMIPObj = averageMIPObj / numPeriodsPerSimulation;
+		fprintf(ptr_file, "%f\n", averageMIPObj);				
+	}
+	
+	for (i = (iterations - 1); i < iterations; i++)
+	{
+		averageLPObj = averageMIPObj = averageLPModelError = averageMIPModelError = 0.0;
+		fprintf(ptr_file, "%d,",i);			
+		for (j = 0; j < numPeriodsPerSimulation; j++)
+		{
+			fprintf(ptr_file, "%f,", MIPobjectiveValues[i][j]);	
+			averageMIPObj += MIPobjectiveValues[i][j];
+		}
+		averageMIPObj = averageMIPObj / numPeriodsPerSimulation;
+		fprintf(ptr_file, "%f", averageMIPObj);								
+	}
+	
+	fclose(ptr_file);
+		
+	
+	//MIP Solution Error
+	
+	//Create summary CSV file for each set of leaks
+	sequentialFile[0] = '\0';
+	strcat(sequentialFile, globalDirName);
+	strcat(sequentialFile, "/E_MIP_solution_error.csv");
+	
+	ptr_file = fopen(sequentialFile, "w");
+	if (!ptr_file)
+		return 1;
+	
+	fprintf(ptr_file, "Run_#,");
+	
+	for (i = 0; i < numPeriodsPerSimulation; i++)
+	{
+		fprintf(ptr_file, "Time_%d,", i);
+	}
+	fprintf(ptr_file, "Average\n");		
+	
+	for (i = 0; i < (iterations - 1); i++)
+	{
+		averageLPObj = averageMIPObj = averageLPModelError = averageMIPModelError = 0.0;
+		fprintf(ptr_file, "%d,",i);
+		
+		for (j = 0; j < numPeriodsPerSimulation; j++)
+		{
+			fprintf(ptr_file, "%f,", MIPmodelError[i][j]);
+			averageMIPModelError += MIPmodelError[i][j];
+		}
+		averageMIPModelError = averageMIPModelError / numPeriodsPerSimulation;
+		fprintf(ptr_file, "%f\n", averageMIPModelError);		
+	}
+	
+	for (i = (iterations - 1); i < iterations; i++)
+	{
+		averageLPObj = averageMIPObj = averageLPModelError = averageMIPModelError = 0.0;
+		fprintf(ptr_file, "%d,",i);	
+		
+		for (j = 0; j < numPeriodsPerSimulation; j++)
+		{
+			fprintf(ptr_file, "%f,", MIPmodelError[i][j]);
+			averageMIPModelError += MIPmodelError[i][j];
+		}
+		averageMIPModelError = averageMIPModelError / numPeriodsPerSimulation;
+		fprintf(ptr_file, "%f", averageMIPModelError);						
+	}
+	
+	fclose(ptr_file);	
+	
 	return 0;
 }
 
@@ -2218,6 +2534,7 @@ int writeLeakFile(int k)
 
 int writeAhat(int k, char *version)
 {
+	/*
 	int i, j;
 	char sequentialFile[100], buffer[10];
 	i = j = 0;	
@@ -2248,6 +2565,7 @@ int writeAhat(int k, char *version)
 	
 	
 	fclose(ptr_file);
+	*/
 	return 0;	
 }
 
