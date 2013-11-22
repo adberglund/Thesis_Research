@@ -22,8 +22,8 @@
 //	for number of leaks and number of simulations  
 //
 //
-int numOfLeaks = 2, iterations = 10, numOfHours = 1, numOfNodesToIgnore = 8;	
-double delta = 1, minLeakSize = 1.0, maxLeakSize = 10.0, minLeakThreshold =0.1,
+int numOfLeaks = 2, iterations = 1, numOfHours = 3, numOfNodesToIgnore = 8;	
+double delta = 1, minLeakSize = 1.0, maxLeakSize = 10.0, minLeakThreshold =0.5,
 	binaryLeakLimit = 0.0, sensorPercentOfTotalNodes = 1.0,
 	numPeriodsPerSimulation;
 char inputFile[50] = "Net3.inp";
@@ -2077,7 +2077,7 @@ int writeSummaryFile(int k, int optimstatus, int numOfSensors, double objval, do
 	} else 
 	{
 		fprintf(ptr_file, "Optimization was stopped early\n");
-	}
+	}c
 	
 	fclose(ptr_file);
 	return 0;
@@ -2146,9 +2146,9 @@ int writeRawResults(int k, int optimstatus, double sol[])
 int writeErrorFile()
 {	
 	char sequentialFile[100];
-	int i; 
+	int i, j; 
 	
-	i = 0;	
+	i = j = 0;	
 	
 	//Create summary CSV file for each set of leaks
 	sequentialFile[0] = '\0';
@@ -2163,8 +2163,11 @@ int writeErrorFile()
 	
 	for (i = 0; i < (iterations - 1); i++)
 	{
-		fprintf(ptr_file, "%f,%f,%f\n", LPobjectiveValues[i],MIPobjectiveValues[i],
-			modelError[i]);										
+		for (j = 0; j < numPeriodsPerSimulation; j++)
+		{
+			fprintf(ptr_file, "%f,", LPobjectiveValues[i],MIPobjectiveValues[i],
+				modelError[i]);	
+		}
 	}
 	for (i = (iterations - 1); i < iterations; i++)
 	{
