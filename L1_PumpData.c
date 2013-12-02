@@ -22,15 +22,15 @@
 //	for number of leaks and number of simulations  
 //
 //
-int numOfLeaks = 2, iterations = 50, numOfHours = 1, numOfNodesToIgnore = 8;	
+int numOfLeaks = 2, iterations = 50, numOfHours = 12, numOfNodesToIgnore = 8;	
 double delta = 1, minLeakSize = 1.0, maxLeakSize = 10.0, minLeakThreshold =0.5,
 	binaryLeakLimit = 0.0, sensorPercentOfTotalNodes = 1.0,
 	numPeriodsPerSimulation;
 char inputFile[50] = "Net3.inp";
 char reportFile[50] = "Net3.rpt";
-char directoryString[50] = "L1_HeatMap/";
+char directoryString[50] = "L1_PumpData/";
 char *nodesToIgnore[8] = {"10", "20", "40", "50", "60", "61", "601", "123"};
-
+int pumpIndex, tankOne, tankTwo, tankThree;
 //
 //
 
@@ -45,7 +45,10 @@ double ***baseCasePressureMatrix, **baseCaseDemand, ***observedPressure,
 	**LPmodelError, **MIPmodelError, **deltas, *previousDeltas, *leakGuesses, 
 	***largePressureMatrix, ***largeA, ***Ahat,  **I, **LPobjectiveValues, 
 	**MIPobjectiveValues,  **LPSolutions, **MIPSolutions, *LPHeatMap, 
-	*MIPHeatMap, *LPWeightedHeatMap, *MIPWeightedHeatMap; 
+	*MIPHeatMap, *LPWeightedHeatMap, *MIPWeightedHeatMap, *tankOneHeadBC,
+	*tankTwoHeadBC, *tankThreeHeadBC, *tankOneHeadObs, *tankTwoHeadObs, 
+	*tankThreeHeadObs, **tankOneHeadSim, **tankTwoHeadSim, **tankThreeHeadSim, 
+	*pumpStatusBC, *pumpStatusObs, **pumpStatusSim; 
 char globalDirName[100];
 clock_t startTime, endTime, iterationStartTime, iterationEndTime;
 
@@ -64,6 +67,7 @@ void printLeakInfo(int);
 void analyzeBaseCase(int, int);
 void oneLeak(int, double, int, int, int);
 void nLeaks(int, int, int);
+void testSolution(int, double, int);
 void findHighestMagnitudes(double *);
 void calculateLeakDemand(int);
 void forgeMIPStartSolution(int, double[]);
@@ -87,8 +91,6 @@ int main(int argc, char *argv[])
 		numOfPressureSensors, periodCount;
 	double previousObjectiveValue;
 	
-	int numLinks = 0, index = 0;
-	
 	//Randomize the leak locations, commented out will use the same seeding 
 	//for each run
 	//srand(time(NULL));
@@ -105,6 +107,20 @@ int main(int argc, char *argv[])
 	ENgetcount(EN_TANKCOUNT, &storage);
 	totalNodeCount = numNodes - storage;
 	//totalNodeCount = totalNodeCount - numOfNodesToIgnore;
+	
+	
+	ENgetlinkindex("335", &pumpIndex);
+	ENgetnodeindex("1", &tankOne);
+	ENgetnodeindex("2", &tankTwo);
+	ENgetnodeindex("3", &tankThree);
+		
+	
+	//ENgetcount(EN_LINKCOUNT, &numLinks);
+	
+	//for (i = 0; i < numLinks; i++)
+	//{
+		//ENgetlinkvalue(
+	//}
 	
 	ENgettimeparam(EN_DURATION, &simDuration);
 	//printf("simDuration from EPANET = %ld\n", simDuration);
@@ -245,6 +261,9 @@ int main(int argc, char *argv[])
 		}
 	}
 	
+	//LPobjectiveValues = (double *) calloc(iterations, sizeof(double));
+	//MIPobjectiveValues = (double *) calloc(iterations, sizeof(double));
+	
 	LPobjectiveValues = (double **) calloc(iterations, sizeof(double *));
 	for (i = 0; i < iterations; i++)
 	{
@@ -274,6 +293,42 @@ int main(int argc, char *argv[])
 	
 	LPWeightedHeatMap = (double *) calloc(totalNodeCount, sizeof(double));
 	MIPWeightedHeatMap = (double *) calloc(totalNodeCount, sizeof(double));
+	
+	
+	tankOneHeadBC = (double *) calloc((numPeriodsPerSimulation * numOfHours), sizeof(double));
+	tankTwoHeadBC = (double *) calloc((numPeriodsPerSimulation * numOfHours), sizeof(double));
+	tankThreeHeadBC = (double *) calloc((numPeriodsPerSimulation * numOfHours), sizeof(double));
+	pumpStatusBC = (double *) calloc((numPeriodsPerSimulation * numOfHours), sizeof(double));
+	tankOneHeadObs = (double *) calloc((numPeriodsPerSimulation * numOfHours), sizeof(double));
+	tankTwoHeadObs = (double *) calloc((numPeriodsPerSimulation * numOfHours), sizeof(double));
+	tankThreeHeadObs = (double *) calloc((numPeriodsPerSimulation * numOfHours), sizeof(double));
+	pumpStatusObs = (double *) calloc((numPeriodsPerSimulation * numOfHours), sizeof(double));
+	
+	tankOneHeadSim = (double **) calloc(totalNodeCount, sizeof(double *));
+	for (i = 0; i < totalNodeCount; i++)
+	{
+		tankOneHeadSim[i] = (double *) calloc((numPeriodsPerSimulation * numOfHours), sizeof(double));
+	}
+	
+	tankTwoHeadSim = (double **) calloc(totalNodeCount, sizeof(double *));
+	for (i = 0; i < totalNodeCount; i++)
+	{
+		tankTwoHeadSim[i] = (double *) calloc((numPeriodsPerSimulation * numOfHours), sizeof(double));
+	}
+	
+	tankThreeHeadSim = (double **) calloc(totalNodeCount, sizeof(double *));
+	for (i = 0; i < totalNodeCount; i++)
+	{
+		tankThreeHeadSim[i] = (double *) calloc((numPeriodsPerSimulation * numOfHours), sizeof(double));
+	}
+	
+	pumpStatusSim = (double **) calloc(totalNodeCount, sizeof(double *));
+	for (i = 0; i < totalNodeCount; i++)
+	{
+		pumpStatusSim[i] = (double *) calloc((numPeriodsPerSimulation * numOfHours), sizeof(double));
+	}
+		
+	
 	
 	// Create environment 
  	error = GRBloadenv(&env, "L1_Iterative.log");
@@ -599,6 +654,8 @@ int main(int argc, char *argv[])
 				error = GRBgetdblattrarray(model, GRB_DBL_ATTR_X, 0, 
 					(totalNodeCount * 3), sol);
 				if (error) goto QUIT;
+												
+				forgeMIPStartSolution(periodCount, sol);								
 				
 				//for (i = 0; i < totalNodeCount*3; i++)
 				//{	
@@ -622,7 +679,7 @@ int main(int argc, char *argv[])
 						deltas[periodCount][i] = 1.0;
 					//printf("\t\tMIP deltas[%d] = %f\n", i, deltas[i]);
 				}
-				
+				//getchar();
 				if ((objval - previousObjectiveValue) < 0)
 				{
 					for (i = 0; i < totalNodeCount * 2; i++)
@@ -631,9 +688,7 @@ int main(int argc, char *argv[])
 					}				
 					MIPobjectiveValues[k][periodCount] = objval;
 				}				
-				
-				forgeMIPStartSolution(periodCount, sol);
-				
+								
 				// Free model
 				GRBfreemodel(model);
 				MIPCounter++;
@@ -644,6 +699,15 @@ int main(int argc, char *argv[])
 				periodCount, LPSolutions);
 			MIPmodelError[k][periodCount] = calculateError(totalNodeCount, 
 				periodCount, MIPSolutions);
+			printf("\n\n\t\t\tSEG FAULT TESTER #4\n");
+			for (i = 0; i < totalNodeCount; i++)
+			{				
+				if (MIPSolutions[periodCount][i] != 0)
+				{
+					printf("\nNode %d has a sol of %f\n", i, MIPSolutions[periodCount][i]); 
+					testSolution(i, MIPSolutions[periodCount][i], periodCount);
+				}
+			}
 			
 			periodCount++;
 		
@@ -659,6 +723,8 @@ int main(int argc, char *argv[])
 		//writeSummaryFile(k, optimstatus, numOfPressureSensors, objval, sol);
 		//writeRawResults(k, optimstatus, sol);
 		writeLeakFile(k);
+		
+		writePumpFile(k);
 		writeIndividualSolutions(k, LPSolutions, "LP");
 		writeIndividualSolutions(k, MIPSolutions, "MIP");
 				
@@ -841,6 +907,40 @@ int main(int argc, char *argv[])
 	free((void *)LPWeightedHeatMap);
 	free((void *)MIPWeightedHeatMap);
 	
+	free((void *)tankOneHeadBC);	
+	free((void *)tankTwoHeadBC);	
+	free((void *)tankThreeHeadBC);	
+	free((void *)pumpStatusBC);	
+	
+	free((void *)tankOneHeadObs);	
+	free((void *)tankTwoHeadObs);	
+	free((void *)tankThreeHeadObs);	
+	free((void *)pumpStatusObs);	
+	
+	for (i = 0; i < totalNodeCount; i++)
+	{
+		free((void *)tankOneHeadSim[i]);
+	}
+	free((void *)tankOneHeadSim);	
+	
+	for (i = 0; i < totalNodeCount; i++)
+	{
+		free((void *)tankTwoHeadSim[i]);
+	}
+	free((void *)tankTwoHeadSim);
+	
+	for (i = 0; i < totalNodeCount; i++)
+	{
+		free((void *)tankThreeHeadSim[i]);
+	}
+	free((void *)tankThreeHeadSim);
+	
+	for (i = 0; i < totalNodeCount; i++)
+	{
+		free((void *)pumpStatusSim[i]);
+	}
+	free((void *)pumpStatusSim);
+	
 		QUIT:
 
 		// Error reporting
@@ -910,6 +1010,31 @@ void initializeArrays(int numOfPressureSensors, int currentRun)
 		coefficients[i] = 0;		
 	}
 	
+	for (i = 0; i < (numPeriodsPerSimulation * numOfHours); i++)
+	{
+		tankOneHeadBC[i] = 0;
+		tankTwoHeadBC[i] = 0;
+		tankThreeHeadBC[i] = 0;
+		pumpStatusBC[i] = 0;
+		
+		tankOneHeadObs[i] = 0;
+		tankTwoHeadObs[i] = 0;
+		tankThreeHeadObs[i] = 0;
+		pumpStatusObs[i] = 0;		
+		
+	}	
+	
+	for (i = 0; i < totalNodeCount; i++)
+	{
+		for (j = 0; j < (numPeriodsPerSimulation * numOfHours); j++)
+		{
+			tankOneHeadSim[i][j] = 0;
+			tankTwoHeadSim[i][j] = 0;
+			tankThreeHeadSim[i][j] = 0;
+			pumpStatusSim[i][j] = 0;
+		}
+	}
+	
 	if (currentRun == 0)
 	{
 		for (i = 0; i < numPeriodsPerSimulation; i++)
@@ -919,8 +1044,8 @@ void initializeArrays(int numOfPressureSensors, int currentRun)
 				LPSolutions[i][j] = 0;
 				MIPSolutions[i][j] = 0;			
 			}
-		}	
-	
+		}
+					
 		for (i = 0; i < iterations; i++)
 		{
 			for (j = 0; j < numPeriodsPerSimulation; j++)
@@ -1465,11 +1590,11 @@ void printLeakInfo(int numOfLeaks)
 void analyzeBaseCase(int sensorCount, int currentPeriod)
 {		
 	long t, tstep, hydraulicTimeStep, duration, warmUpExtension;
-	float pressure, demand;
+	float pressure, demand, tankOneHead, tankTwoHead, tankThreeHead, pumpStatus;
 	int i, j, currentTime, compareResult;	
 	char name[20];
 	
-	i = j = currentTime = 0;
+	i = j = currentTime = pumpStatus = 0;
 	pressure = demand = 0.0;
 	EPANETsimCounter++;
 	warmUpExtension = (numOfHours * currentPeriod * 3600);
@@ -1526,7 +1651,19 @@ void analyzeBaseCase(int sensorCount, int currentPeriod)
 				ENgetnodevalue(i, EN_DEMAND, &demand);
 				baseCaseDemand[currentPeriod][i-1] += demand;				
 			}
-			currentTime++;
+			
+			ENgetlinkvalue(pumpIndex, EN_STATUS, &pumpStatus);
+			ENgetnodevalue(tankOne, EN_HEAD, &tankOneHead);
+			ENgetnodevalue(tankTwo, EN_HEAD, &tankTwoHead);
+			ENgetnodevalue(tankThree, EN_HEAD, &tankThreeHead);
+			
+			tankOneHeadBC[currentTime + (currentPeriod * numOfHours)] = tankOneHead;
+			tankTwoHeadBC[currentTime + (currentPeriod * numOfHours)] = tankTwoHead;
+			tankThreeHeadBC[currentTime + (currentPeriod * numOfHours)] = tankThreeHead;
+			pumpStatusBC[currentTime + (currentPeriod * numOfHours)] = pumpStatus;
+			
+			currentTime++;	
+			
 		}		
 		ENnextH(&tstep);  	
 	} while (tstep > 0); 
@@ -1626,11 +1763,12 @@ void oneLeak(int index, double emitterCoeff, int sensorCount, int columnNumber, 
 void nLeaks(int leakCount, int sensorCount, int currentPeriod) 
 {
 	long t, tstep, hydraulicTimeStep, duration, warmUpExtension;	
-	float pressure, baseDemand, demand;
+	float pressure, baseDemand, demand, tankOneHead, tankTwoHead, tankThreeHead,
+		pumpStatus;
 	int i, j, currentTime, compareResult;
 	char name[20];
 
-	i = j = currentTime = 0;
+	i = j = currentTime = pumpStatus = 0;
 	totalDemand = pressure = baseDemand = demand = 0.0;
 	EPANETsimCounter++;
 	warmUpExtension = (numOfHours * currentPeriod * 3600);
@@ -1704,6 +1842,17 @@ void nLeaks(int leakCount, int sensorCount, int currentPeriod)
 				//ENgetnodevalue(leakNodes[i], EN_DEMAND, &demand);			
 				//leakDemands[i] = (demand - baseDemand);
 			//}
+			
+			ENgetlinkvalue(pumpIndex, EN_STATUS, &pumpStatus);
+			ENgetnodevalue(tankOne, EN_HEAD, &tankOneHead);
+			ENgetnodevalue(tankTwo, EN_HEAD, &tankTwoHead);
+			ENgetnodevalue(tankThree, EN_HEAD, &tankThreeHead);
+			
+			tankOneHeadObs[currentTime + (currentPeriod * numOfHours)] = tankOneHead;
+			tankTwoHeadObs[currentTime + (currentPeriod * numOfHours)] = tankTwoHead;
+			tankThreeHeadObs[currentTime + (currentPeriod * numOfHours)] = tankThreeHead;
+			pumpStatusObs[currentTime + (currentPeriod * numOfHours)] = pumpStatus;
+			
 			currentTime++;
 		}
 		ENnextH(&tstep); 		
@@ -1728,6 +1877,75 @@ void nLeaks(int leakCount, int sensorCount, int currentPeriod)
 	}
 	//getchar();
 }
+
+
+void testSolution(int index, double emitterCoeff, int currentPeriod) 
+{	
+	int currentTime;
+	long t, tstep, hydraulicTimeStep, warmUpExtension;
+	float tankOneHead, tankTwoHead, tankThreeHead, pumpStatus;
+	
+	currentTime = 0;	
+	EPANETsimCounter++;
+	warmUpExtension = (numOfHours * currentPeriod * 3600);
+	
+	ENgettimeparam(EN_HYDSTEP, &hydraulicTimeStep);
+	
+	//Create the leak
+	ENsetnodevalue(index, EN_EMITTER, emitterCoeff);
+	
+	ENopenH();  
+	ENinitH(0);
+	
+	
+	
+	//Run the hydraulic analysis
+	do {  	
+		ENrunH(&t);				
+		if (t%hydraulicTimeStep == 0 && t >= (WARMUP_PERIOD + warmUpExtension)
+			&& currentTime < numOfHours)
+		{
+			
+			ENgetlinkvalue(pumpIndex, EN_STATUS, &pumpStatus);
+			ENgetnodevalue(tankOne, EN_HEAD, &tankOneHead);
+			ENgetnodevalue(tankTwo, EN_HEAD, &tankTwoHead);
+			ENgetnodevalue(tankThree, EN_HEAD, &tankThreeHead);
+			
+			tankOneHeadSim[index][currentTime + (currentPeriod * numOfHours)] = tankOneHead;
+			tankTwoHeadSim[index][currentTime + (currentPeriod * numOfHours)] = tankTwoHead;
+			tankThreeHeadSim[index][currentTime + (currentPeriod * numOfHours)] = tankThreeHead;
+			pumpStatusSim[index][currentTime + (currentPeriod * numOfHours)] = pumpStatus;			
+			
+            currentTime++;
+            
+         }
+		ENnextH(&tstep); 
+	} while (tstep > 0);
+	
+	//Close the hydraulic solver
+	ENcloseH();
+	
+	//"Fix" the leak
+	ENsetnodevalue(index, EN_EMITTER, 0.0);
+	
+	//for (i = 1; i <= sensorCount; i++)
+	//{					
+		//largePressureMatrix[i-1][columnNumber] = 
+			//largePressureMatrix[i-1][columnNumber] / numOfHours;
+		//ENgetnodeid(i, name);
+		//printf("One leak Pressure @ node %s = %f\n", name, largePressureMatrix[i-1][columnNumber]);			
+	//}
+	//getchar();
+}
+
+
+
+
+
+
+
+
+
 
 //FUNCTION
 //Find the n highest leak magnitudes in the current solution
@@ -1765,8 +1983,8 @@ void findHighestMagnitudes(double *solutions)
 
 void forgeMIPStartSolution(int currentPeriod, double sol[])
 {
-	int i;
-	i = 0;
+	int i, j;
+	i = j = 0;
 	
 	for (i = 0; i < totalNodeCount; i++)
 	{
@@ -1788,7 +2006,6 @@ void forgeMIPStartSolution(int currentPeriod, double sol[])
 		if (sol[i] >= minLeakThreshold)
 			MIPStartSolution[currentPeriod][i] = 1;
 	}
-	
 }
 
 void calculateLeakDemand(int currentPeriod)
@@ -2541,6 +2758,228 @@ int writeLeakFile(int k)
 	fclose(ptr_file);
 	return 0;	
 }
+
+int writePumpFile(int currentRun)
+{	
+	int i, j;
+	char sequentialFile[150], buffer[10];
+	
+	i = j = 0;	
+	
+	//Create CSV file for each time period's solutions
+	sequentialFile[0] = '\0';
+	strcat(sequentialFile, globalDirName);	
+	strcat(sequentialFile, "/P_Pump_Base_");
+	sprintf(buffer,"%d",currentRun);
+	strcat(sequentialFile, buffer);
+	strcat(sequentialFile, ".csv");
+	
+	ptr_file = fopen(sequentialFile, "w");
+	if (!ptr_file)
+		return 1;
+	
+	fprintf(ptr_file, "Hour,Tank_One_Head,Tank_Two_Head,Tank_Three_Head,Pump_Status\n");
+	for (i = 0; i < (numPeriodsPerSimulation * numOfHours) - 1; i++)
+	{
+		fprintf(ptr_file, "%d,%f,%f,%f,%f\n", i, tankOneHeadBC[i],
+			tankTwoHeadBC[i], tankThreeHeadBC[i], pumpStatusBC[i]);		
+	}	
+	for (i = (numPeriodsPerSimulation * numOfHours) - 1;
+		i < (numPeriodsPerSimulation * numOfHours); i++)
+	{
+		fprintf(ptr_file, "%d,%f,%f,%f,%f", i, tankOneHeadBC[i],
+			tankTwoHeadBC[i], tankThreeHeadBC[i], pumpStatusBC[i]);		
+	}
+
+	fclose(ptr_file);
+	
+	//Create CSV file for each time period's solutions
+	sequentialFile[0] = '\0';
+	strcat(sequentialFile, globalDirName);	
+	strcat(sequentialFile, "/P_Pump_Obs_");
+	sprintf(buffer,"%d",currentRun);
+	strcat(sequentialFile, buffer);
+	strcat(sequentialFile, ".csv");
+	
+	ptr_file = fopen(sequentialFile, "w");
+	if (!ptr_file)
+		return 1;
+	
+	fprintf(ptr_file, "Hour,Tank_One_Head,Tank_Two_Head,Tank_Three_Head,Pump_Status\n");
+	for (i = 0; i < (numPeriodsPerSimulation * numOfHours) - 1; i++)
+	{
+		fprintf(ptr_file, "%d,%f,%f,%f,%f\n", i, tankOneHeadObs[i],
+			tankTwoHeadObs[i], tankThreeHeadObs[i], pumpStatusObs[i]);		
+	}	
+	for (i = (numPeriodsPerSimulation * numOfHours) - 1;
+		i < (numPeriodsPerSimulation * numOfHours); i++)
+	{
+		fprintf(ptr_file, "%d,%f,%f,%f,%f", i, tankOneHeadObs[i],
+			tankTwoHeadObs[i], tankThreeHeadObs[i], pumpStatusObs[i]);		
+	}
+
+	fclose(ptr_file);
+	
+	//Create CSV file for each time period's solutions
+	sequentialFile[0] = '\0';
+	strcat(sequentialFile, globalDirName);	
+	strcat(sequentialFile, "/P_Pump_Sim_");
+	sprintf(buffer,"%d",currentRun);
+	strcat(sequentialFile, buffer);
+	strcat(sequentialFile, ".csv");
+	
+	ptr_file = fopen(sequentialFile, "w");
+	if (!ptr_file)
+		return 1;
+	
+	fprintf(ptr_file, "Hour,");
+	for (j = 0; j < totalNodeCount; j++)
+	{
+		fprintf(ptr_file, "Leak_at_%d,", j);
+	}
+	fprintf(ptr_file, "\n");
+	for (i = 0; i < (numPeriodsPerSimulation * numOfHours) - 1; i++)
+	{
+		fprintf(ptr_file, "%d", i);
+		for (j = 0; j < totalNodeCount; j++)
+		{
+			fprintf(ptr_file, ",%f", pumpStatusSim[j][i]);		
+		}
+		fprintf(ptr_file, "\n");
+	}
+	for (i = (numPeriodsPerSimulation * numOfHours) - 1;
+		i < (numPeriodsPerSimulation * numOfHours); i++)
+	{
+		fprintf(ptr_file, "%d", i);
+		for (j = 0; j < totalNodeCount; j++)
+		{
+			fprintf(ptr_file, ",%f", pumpStatusSim[j][i]);		
+		}		
+	}
+
+	fclose(ptr_file);
+	
+	//Create CSV file for each time period's solutions
+	sequentialFile[0] = '\0';
+	strcat(sequentialFile, globalDirName);	
+	strcat(sequentialFile, "/P_TankOne_Sim_");
+	sprintf(buffer,"%d",currentRun);
+	strcat(sequentialFile, buffer);
+	strcat(sequentialFile, ".csv");
+	
+	ptr_file = fopen(sequentialFile, "w");
+	if (!ptr_file)
+		return 1;
+	
+	fprintf(ptr_file, "Hour,");
+	for (j = 0; j < totalNodeCount; j++)
+	{
+		fprintf(ptr_file, "Leak_at_%d,", j);
+	}
+	fprintf(ptr_file, "\n");
+	for (i = 0; i < (numPeriodsPerSimulation * numOfHours) - 1; i++)
+	{
+		fprintf(ptr_file, "%d", i);
+		for (j = 0; j < totalNodeCount; j++)
+		{
+			fprintf(ptr_file, ",%f", tankOneHeadSim[j][i]);		
+		}
+		fprintf(ptr_file, "\n");
+	}
+	for (i = (numPeriodsPerSimulation * numOfHours) - 1;
+		i < (numPeriodsPerSimulation * numOfHours); i++)
+	{
+		fprintf(ptr_file, "%d", i);
+		for (j = 0; j < totalNodeCount; j++)
+		{
+			fprintf(ptr_file, ",%f", tankOneHeadSim[j][i]);		
+		}		
+	}
+
+	fclose(ptr_file);
+	
+		//Create CSV file for each time period's solutions
+	sequentialFile[0] = '\0';
+	strcat(sequentialFile, globalDirName);	
+	strcat(sequentialFile, "/P_TankTwo_Sim_");
+	sprintf(buffer,"%d",currentRun);
+	strcat(sequentialFile, buffer);
+	strcat(sequentialFile, ".csv");
+	
+	ptr_file = fopen(sequentialFile, "w");
+	if (!ptr_file)
+		return 1;
+	
+	fprintf(ptr_file, "Hour,");
+	for (j = 0; j < totalNodeCount; j++)
+	{
+		fprintf(ptr_file, "Leak_at_%d,", j);
+	}
+	fprintf(ptr_file, "\n");
+	for (i = 0; i < (numPeriodsPerSimulation * numOfHours) - 1; i++)
+	{
+		fprintf(ptr_file, "%d", i);
+		for (j = 0; j < totalNodeCount; j++)
+		{
+			fprintf(ptr_file, ",%f", tankTwoHeadSim[j][i]);		
+		}
+		fprintf(ptr_file, "\n");
+	}
+	for (i = (numPeriodsPerSimulation * numOfHours) - 1;
+		i < (numPeriodsPerSimulation * numOfHours); i++)
+	{
+		fprintf(ptr_file, "%d", i);
+		for (j = 0; j < totalNodeCount; j++)
+		{
+			fprintf(ptr_file, ",%f", tankTwoHeadSim[j][i]);		
+		}		
+	}
+
+	fclose(ptr_file);
+
+		//Create CSV file for each time period's solutions
+	sequentialFile[0] = '\0';
+	strcat(sequentialFile, globalDirName);	
+	strcat(sequentialFile, "/P_TankThree_Sim_");
+	sprintf(buffer,"%d",currentRun);
+	strcat(sequentialFile, buffer);
+	strcat(sequentialFile, ".csv");
+	
+	ptr_file = fopen(sequentialFile, "w");
+	if (!ptr_file)
+		return 1;
+	
+	fprintf(ptr_file, "Hour,");
+	for (j = 0; j < totalNodeCount; j++)
+	{
+		fprintf(ptr_file, "Leak_at_%d,", j);
+	}
+	fprintf(ptr_file, "\n");
+	for (i = 0; i < (numPeriodsPerSimulation * numOfHours) - 1; i++)
+	{
+		fprintf(ptr_file, "%d", i);
+		for (j = 0; j < totalNodeCount; j++)
+		{
+			fprintf(ptr_file, ",%f", tankThreeHeadSim[j][i]);		
+		}
+		fprintf(ptr_file, "\n");
+	}
+	for (i = (numPeriodsPerSimulation * numOfHours) - 1;
+		i < (numPeriodsPerSimulation * numOfHours); i++)
+	{
+		fprintf(ptr_file, "%d", i);
+		for (j = 0; j < totalNodeCount; j++)
+		{
+			fprintf(ptr_file, ",%f", tankThreeHeadSim[j][i]);		
+		}		
+	}
+
+	fclose(ptr_file);
+	
+	return 0;	
+
+}
+
 
 int writeAhat(int k, char *version)
 {
