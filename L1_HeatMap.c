@@ -2103,7 +2103,7 @@ int writeIndividualSolutions(int currentRun, double **solutions, char *method)
 	
 	for (i = totalNodeCount; i < (totalNodeCount * 2) - 1; i++)
 	{
-		ENgetnodeid(i+1, name);		
+		ENgetnodeid((i-totalNodeCount)+1, name);		
 		fprintf(ptr_file, "%s,", name);
 		for (j = 0; j < numPeriodsPerSimulation; j++)
 		{
@@ -2114,7 +2114,7 @@ int writeIndividualSolutions(int currentRun, double **solutions, char *method)
 	
 	for (i = (totalNodeCount * 2) - 1; i < (totalNodeCount * 2); i++)
 	{
-		ENgetnodeid(i+1, name);		
+		ENgetnodeid((i-totalNodeCount)+1, name);		
 		fprintf(ptr_file, "%s,", name);
 		for (j = 0; j < numPeriodsPerSimulation; j++)
 		{

@@ -22,7 +22,7 @@
 //	for number of leaks and number of simulations  
 //
 //
-int numOfLeaks = 2, iterations = 50, numOfHours = 1, numOfNodesToIgnore = 8;	
+int numOfLeaks = 2, iterations = 1, numOfHours = 12, numOfNodesToIgnore = 8;	
 double delta = 1, minLeakSize = 1.0, maxLeakSize = 10.0, minLeakThreshold =0.5,
 	binaryLeakLimit = 0.0, sensorPercentOfTotalNodes = 1.0,
 	numPeriodsPerSimulation;
@@ -45,7 +45,7 @@ double ***baseCasePressureMatrix, **baseCaseDemand, ***observedPressure,
 	**LPmodelError, **MIPmodelError, **deltas, *previousDeltas, *leakGuesses, 
 	***largePressureMatrix, ***largeA, ***Ahat,  **I, **LPobjectiveValues, 
 	**MIPobjectiveValues, **nearOptimaObjectiveValues,  **LPSolutions, 
-	**MIPSolutions, *LPHeatMap, *MIPHeatMap, *LPWeightedHeatMap, 
+	**MIPSolutions, **nearOptimaSolutions, *LPHeatMap, *MIPHeatMap, *LPWeightedHeatMap, 
 	*MIPWeightedHeatMap; 
 char globalDirName[100];
 clock_t startTime, endTime, iterationStartTime, iterationEndTime;
@@ -72,6 +72,7 @@ void forgeMIPStartSolution(int, double[]);
 double calculateError(int, int, double **);
 int makeHeatMap(int);
 int writeIndividualSolutions(int, double **, char *);
+int writeNearOptimaSolutions(int, int, double **);
 int writeNearOptimaObjectives(int, double **);
 int writeSummaryFile(int, int, int, double, double[]);
 int writeRawResults(int, int, double[]);
@@ -282,6 +283,12 @@ int main(int argc, char *argv[])
 	for (i = 0; i < numPeriodsPerSimulation; i++)
 	{
 		MIPSolutions[i] = (double *) calloc((totalNodeCount * 2), sizeof(double));
+	}
+
+	nearOptimaSolutions = (double **) calloc(numPeriodsPerSimulation, sizeof(double *));
+	for (i = 0; i < numPeriodsPerSimulation; i++)
+	{
+		nearOptimaSolutions[i] = (double *) calloc((totalNodeCount * 2), sizeof(double));
 	}	
 	
 	LPHeatMap = (double *) calloc(totalNodeCount, sizeof(double));
@@ -672,9 +679,17 @@ int main(int argc, char *argv[])
 				nearOptimaBinaryLimit = 0;
 				for (i = 0; i < totalNodeCount; i++)
 				{
-					if(MIPSolutions[l][i] != 0);
+					if(MIPSolutions[l][i] > 0);
 					{
 						nearOptimaBinaryLimit++;
+					}
+				}
+				for (i = 0; i < totalNodeCount; i++)
+				{
+					deltas[l][i] = 1.0;
+					if (MIPSolutions[l][i] >= minLeakThreshold)
+					{
+						deltas[l][i] = MIPSolutions[l][i];
 					}
 				}
 				for (m = 0; m < (numPeriodsPerSimulation); m++)	
@@ -792,11 +807,11 @@ int main(int argc, char *argv[])
 					error = GRBoptimize(model);
 					if (error) goto QUIT;
 					
-					//error = GRBwrite(model, "L1_Iterative_Polish.lp");
-					//if (error) goto QUIT;
+					error = GRBwrite(model, "L1_NearOptima.lp");
+					if (error) goto QUIT;
 			    	
-					//error = GRBwrite(model, "L1_Iterative_Polish.sol");
-					//if (error) goto QUIT;
+					error = GRBwrite(model, "L1_NearOptima.sol");
+					if (error) goto QUIT;
 								
 					// Capture solution information		
 					error = GRBgetintattr(model, GRB_INT_ATTR_STATUS, &optimstatus);
@@ -811,10 +826,16 @@ int main(int argc, char *argv[])
 					nearOptimaObjectiveValues[l][m] = objval;
 					printf("\n\n\n\t\t\t Solution from time: %d\t Evaluated at time: %d\n", l, m);
 					
-					//error = GRBgetdblattrarray(model, GRB_DBL_ATTR_X, 0, 
-						//(totalNodeCount * 3), sol);
-					//if (error) goto QUIT;
-											
+					error = GRBgetdblattrarray(model, GRB_DBL_ATTR_X, 0, 
+						(totalNodeCount * 3), sol);
+					if (error) goto QUIT;
+					printf("\n\n\n\t\t\tseg fault test No. 0\n");
+					for (i = 0; i < totalNodeCount * 2; i++)
+					{
+						nearOptimaSolutions[m][i] = sol[i];
+					}
+					printf("\n\n\n\t\t\tseg fault test No. 0.5\n");
+					writeNearOptimaSolutions(k, l, nearOptimaSolutions);						
 					//forgeMIPStartSolution(periodCount, sol);
 					
 					// Free model
@@ -836,13 +857,13 @@ int main(int argc, char *argv[])
 		//makeHeatMap(k);
 		//writeSummaryFile(k, optimstatus, numOfPressureSensors, objval, sol);
 		//writeRawResults(k, optimstatus, sol);
-		//writeLeakFile(k);
+		writeLeakFile(k);
 		//writeIndividualSolutions(k, LPSolutions, "LP");
-		//writeIndividualSolutions(k, MIPSolutions, "MIP");
+		writeIndividualSolutions(k, MIPSolutions, "MIP");
 				
 	}
 	
-	//writeErrorFile();
+	writeErrorFile();
 	
 	/*
 	for (i = 0; i < totalNodeCount; i++) 
@@ -1026,6 +1047,12 @@ int main(int argc, char *argv[])
 	}
 	free((void *)MIPSolutions);
 	
+	for (i = 0; i < numPeriodsPerSimulation; i++)
+	{
+		free((void *)nearOptimaSolutions[i]);
+	}
+	free((void *)nearOptimaSolutions);
+	
 	free((void *)LPHeatMap);
 	free((void *)MIPHeatMap);
 	free((void *)LPWeightedHeatMap);
@@ -1117,7 +1144,8 @@ void initializeArrays(int numOfPressureSensors, int currentRun)
 			for (j = 0; j < (totalNodeCount * 2); j++)
 			{
 				LPSolutions[i][j] = 0;
-				MIPSolutions[i][j] = 0;			
+				MIPSolutions[i][j] = 0;						
+				nearOptimaSolutions[i][j] = 0;	
 			}
 		}	
 	
@@ -1454,7 +1482,7 @@ void populateNearOptimaMatricies(int solutionPeriod, int currentPeriod,
 		{	
 			largeA[currentPeriod][i][j] = 0;
 		}
-	}
+	}	
 	
 	for(i = 1; i <= numNodes; i++)
 	{		
@@ -2365,7 +2393,7 @@ int writeIndividualSolutions(int currentRun, double **solutions, char *method)
 	
 	for (i = totalNodeCount; i < (totalNodeCount * 2) - 1; i++)
 	{
-		ENgetnodeid(i+1, name);		
+		ENgetnodeid((i-totalNodeCount)+1, name);		
 		fprintf(ptr_file, "%s,", name);
 		for (j = 0; j < numPeriodsPerSimulation; j++)
 		{
@@ -2376,7 +2404,7 @@ int writeIndividualSolutions(int currentRun, double **solutions, char *method)
 	
 	for (i = (totalNodeCount * 2) - 1; i < (totalNodeCount * 2); i++)
 	{
-		ENgetnodeid(i+1, name);		
+		ENgetnodeid((i-totalNodeCount)+1, name);		
 		fprintf(ptr_file, "%s,", name);
 		for (j = 0; j < numPeriodsPerSimulation; j++)
 		{
@@ -2394,7 +2422,134 @@ int writeIndividualSolutions(int currentRun, double **solutions, char *method)
 
 }
 
+int writeNearOptimaSolutions(int currentRun, int currentSolution, double **solutions)
+{	
+	int i, j, timeBlock;
+	char sequentialFile[200], buffer[10], name[10];
+	
+	i = j = timeBlock = 0;	
+	
+	//Create CSV file for each time period's solutions
+	sequentialFile[0] = '\0';
+	
+	strcat(sequentialFile, globalDirName);
+	
+	strcat(sequentialFile, "/R_");	
+	
+	strcat(sequentialFile, "_NearOptimaResults_");
+	
+	sprintf(buffer,"%d",currentRun);		
+	
+	strcat(sequentialFile, buffer);
+	
+	strcat(sequentialFile, "_");	
+	
+	sprintf(buffer,"%d",currentSolution);
+	strcat(sequentialFile, buffer);
+	strcat(sequentialFile, ".csv");
+	
+	ptr_file = fopen(sequentialFile, "w");
+	if (!ptr_file)
+		return 1;
+	
 
+	
+	fprintf(ptr_file, ",");
+	for (i = 0; i < numPeriodsPerSimulation; i++)
+	{
+		fprintf(ptr_file, "%d-", timeBlock);
+		timeBlock = timeBlock + numOfHours;
+		fprintf(ptr_file, "%d,", timeBlock);
+	}
+	fprintf(ptr_file, "\n");
+	
+	
+	for (i = 0; i < totalNodeCount - 1; i++)
+	{
+		ENgetnodeid(i+1, name);		
+		fprintf(ptr_file, "%s,", name);
+		for (j = 0; j < numPeriodsPerSimulation; j++)
+		{
+			fprintf(ptr_file, "%f,", solutions[j][i]);			
+		}
+		fprintf(ptr_file, "\n");
+		/*
+		for (j = 0; j < numPeriodsPerSimulation; j++)
+		{
+			fprintf(ptr_file, "%f,", MIPSolutions[j][i]);			
+		}
+		fprintf(ptr_file, "\n");
+		*/
+	}
+	printf("\n\n\n\t\t\tseg fault test No. 2\n");
+	for (i = totalNodeCount - 1; i < totalNodeCount; i++)
+	{
+		ENgetnodeid(i+1, name);		
+		fprintf(ptr_file, "%s,", name);
+		for (j = 0; j < numPeriodsPerSimulation; j++)
+		{
+			fprintf(ptr_file, "%f,", solutions[j][i]);			
+		}		
+	}
+	printf("\n\n\n\t\t\tseg fault test No. 3\n");
+	fclose(ptr_file);
+	
+	timeBlock = 0;
+	
+	//Create CSV file for each time period's solutions
+	sequentialFile[0] = '\0';
+	strcat(sequentialFile, globalDirName);
+	strcat(sequentialFile, "/P_");	
+	strcat(sequentialFile, "_PressureError_");
+	sprintf(buffer,"%d",currentRun);
+	strcat(sequentialFile, buffer);
+	strcat(sequentialFile, "_");	
+	strcat(sequentialFile, currentSolution);
+	strcat(sequentialFile, ".csv");
+	
+	ptr_file = fopen(sequentialFile, "w");
+	if (!ptr_file)
+		return 1;
+	
+	fprintf(ptr_file, ",");
+	for (i = 0; i < numPeriodsPerSimulation; i++)
+	{
+		fprintf(ptr_file, "%d-", timeBlock);
+		timeBlock = timeBlock + numOfHours;
+		fprintf(ptr_file, "%d,", timeBlock);
+	}
+	fprintf(ptr_file, "\n");
+	
+	for (i = totalNodeCount; i < (totalNodeCount * 2) - 1; i++)
+	{
+		ENgetnodeid((i-totalNodeCount)+1, name);		
+		fprintf(ptr_file, "%s,", name);
+		for (j = 0; j < numPeriodsPerSimulation; j++)
+		{
+			fprintf(ptr_file, "%f,", solutions[j][i]);			
+		}
+		fprintf(ptr_file, "\n");
+	}
+	printf("\n\n\n\t\t\tseg fault test No. 4\n");
+	for (i = (totalNodeCount * 2) - 1; i < (totalNodeCount * 2); i++)
+	{
+		ENgetnodeid((i-totalNodeCount)+1, name);		
+		fprintf(ptr_file, "%s,", name);
+		for (j = 0; j < numPeriodsPerSimulation; j++)
+		{
+			fprintf(ptr_file, "%f,", solutions[j][i]);			
+		}		
+	}
+	printf("\n\n\n\t\t\tseg fault test No. 5\n");
+	fclose(ptr_file);
+	
+
+	//free((void *) LPMax);
+	//free((void *) MIPMax);
+
+	return 0;	
+
+}
 
 
 int writeNearOptimaObjectives(int currentRun, double **objectives)
