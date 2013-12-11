@@ -35,7 +35,7 @@ char *nodesToIgnore[8] = {"10", "20", "40", "50", "60", "61", "601", "123"};
 //
 
 long simDuration;
-int totalNodeCount, EPANETsimCounter;
+int totalNodeCount, EPANETsimCounter, nearOptimaBinaryLimit;
 int *leakNodes, *sensorNodes, **MIPStartSolution, *isConstraintWorthy;
 double averageDelta, averagePreviousDelta, bigM = 999,
 	totalTime, timePerIteration;
@@ -266,10 +266,10 @@ int main(int argc, char *argv[])
 		MIPobjectiveValues[i] = (double *) calloc(numPeriodsPerSimulation, sizeof(double));
 	}
 	
-	nearOptimaObjectiveValues = (double **) calloc((numOfHours * numPeriodsPerSimulation), sizeof(double *));
-	for (i = 0; i < (numOfHours * numPeriodsPerSimulation); i++)
+	nearOptimaObjectiveValues = (double **) calloc((numPeriodsPerSimulation), sizeof(double *));
+	for (i = 0; i < (numPeriodsPerSimulation); i++)
 	{
-		nearOptimaObjectiveValues[i] = (double *) calloc((numOfHours * numPeriodsPerSimulation), sizeof(double));
+		nearOptimaObjectiveValues[i] = (double *) calloc((numPeriodsPerSimulation), sizeof(double));
 	}
 	
 	LPSolutions = (double **) calloc(numPeriodsPerSimulation, sizeof(double *));
@@ -306,7 +306,7 @@ int main(int argc, char *argv[])
  	//}
  	//getchar();
  	
-	//Create observation	
+	//Create observation
 	for (k = 0; k < iterations; k++)
 	{
 		iterationStartTime = clock();
@@ -330,10 +330,9 @@ int main(int argc, char *argv[])
 			populateBMatrix(periodCount, totalNodeCount);
 			
 			printLeakInfo(numOfLeaks);
-			printf("\n\n\t\t\t\tSEG FAULT TEST STATEMENT No. 1\n");
+						
+			//calculateLeakDemand(periodCount);
 			
-			calculateLeakDemand(periodCount);
-			printf("\n\n\t\t\t\tSEG FAULT TEST STATEMENT No. 2\n");
 			//for (i = 0; i < totalNodeCount; i++)
 			//{
 				//printf("\n\tisConstraintWorthy[%d] = %d", i, isConstraintWorthy[i]);
@@ -492,9 +491,193 @@ int main(int argc, char *argv[])
 			//periodCount = 0;
 			
 			//Run MIP Polishing Step
-			for (l = 0; l < (numOfHours * numPeriodsPerSimulation); l++)
+			do
 			{
-				for (m = 0; m < (numOfHours * numPeriodsPerSimulation); m++)	
+				counter++;
+				
+				populateMatricies(periodCount, totalNodeCount, numOfPressureSensors, sensorNodes);
+				//writeAhat(k, "Polish");
+			
+				// Create an empty model 		
+ 				error = GRBnewmodel(env, &model, "L1MIP", 0, NULL, NULL, NULL, NULL, 
+ 					NULL);
+ 				if (error) goto QUIT;
+ 				 	
+ 				// Add variables 
+ 				for (i = 0; i < (totalNodeCount * 2); i++)
+ 				{
+ 					obj[i] = coefficients[i]; 			
+ 					vtype[i] = GRB_CONTINUOUS; 			
+ 				}
+ 				
+ 				for (i = (totalNodeCount * 2); i < (totalNodeCount * 3); i++)
+ 				{
+ 					obj[i] = 0.0;
+ 					vtype[i] = GRB_BINARY;
+ 				}
+ 				 				
+				error = GRBaddvars(model, (totalNodeCount * 3), 0, NULL, NULL, NULL,
+					obj, NULL, NULL, vtype, NULL);
+				if (error) goto QUIT;
+				
+				// Integrate new variables		
+				error = GRBupdatemodel(model);
+				if (error) goto QUIT;
+						
+				// First constraint: Ax <= b						
+				for (i = 0; i < (totalNodeCount); i++)
+				{
+					if (isConstraintWorthy[i] == 1)
+					{
+						for (j = 0; j < (totalNodeCount); j++)
+						{
+							ind[j] = j;
+							val[j] = Ahat[periodCount][i][j];			
+						}								
+						ind[totalNodeCount] = j + i;
+						val[totalNodeCount] = Ahat[periodCount][i][j+i];
+						error = GRBaddconstr(model, (totalNodeCount + 1), ind, val, 
+							GRB_LESS_EQUAL, bhat[periodCount][i],NULL);			
+						if (error) goto QUIT;
+					}
+				}
+				
+				for (i = totalNodeCount; i < (totalNodeCount * 2); i++)
+				{
+					if (isConstraintWorthy[i-totalNodeCount] == 1)
+					{
+						for (j = 0; j < (totalNodeCount); j++)
+						{
+							ind[j] = j;
+							val[j] = Ahat[periodCount][i][j];			
+						}								
+						ind[totalNodeCount] = j + (i-totalNodeCount);
+						val[totalNodeCount] = Ahat[periodCount][i][j+(i-totalNodeCount)];
+						error = GRBaddconstr(model, (totalNodeCount + 1), ind, val, 
+							GRB_LESS_EQUAL, bhat[periodCount][i],NULL);			
+						if (error) goto QUIT;
+					}
+				}
+				
+				//Leak magnitude - (binary * bigM) <= 0
+				for (i = (totalNodeCount * 2); i < (totalNodeCount * 3); i++)
+				{		
+					ind[0] = (i - (totalNodeCount * 2)); 	ind[1] = i; 
+					val[0] = 1.0; 		val[1] = -bigM ;
+											
+					error = GRBaddconstr(model, 2, ind, val, GRB_LESS_EQUAL,0.0,
+						NULL);
+					if (error) goto QUIT;
+				}
+				
+				// Limit sum of binaries to number of leaks searching for...		
+				for (i = (totalNodeCount * 2); i < (totalNodeCount * 3); i++)
+				{		
+					ind[i-(totalNodeCount * 2)] = i;
+					val[i-(totalNodeCount * 2)] = 1.0;
+				}								
+				error = GRBaddconstr(model, totalNodeCount, ind, val, 
+					GRB_LESS_EQUAL, binaryLeakLimit, NULL);
+				if (error) goto QUIT;	
+        		
+				
+				//if(MIPCounter == 0)
+				//{
+				for(i = 0; i < totalNodeCount; i++)
+				{
+					error = GRBsetdblattrelement(model, "Start", 
+						i + (totalNodeCount * 2), MIPStartSolution[periodCount][i]);
+					if (error) goto QUIT;
+				}
+				//}
+				
+				error = GRBoptimize(model);
+				if (error) goto QUIT;
+				
+				error = GRBwrite(model, "L1_Iterative_Polish.lp");
+				if (error) goto QUIT;
+			
+				error = GRBwrite(model, "L1_Iterative_Polish.sol");
+				if (error) goto QUIT;
+							
+				// Capture solution information		
+				error = GRBgetintattr(model, GRB_INT_ATTR_STATUS, &optimstatus);
+				if (error) goto QUIT;
+				
+				printf("previous obj = %f \n objval = %f\n", previousObjectiveValue, objval);
+				previousObjectiveValue = objval;
+				
+				error = GRBgetdblattr(model, GRB_DBL_ATTR_OBJVAL, &objval);
+				if (error) goto QUIT;
+				
+				
+				error = GRBgetdblattrarray(model, GRB_DBL_ATTR_X, 0, 
+					(totalNodeCount * 3), sol);
+				if (error) goto QUIT;
+				
+				//for (i = 0; i < totalNodeCount*3; i++)
+				//{	
+					//printf( "\nsol[%d] = %f", i, sol[i]);
+				//}
+				//printf( "\n");
+				//getchar();
+				
+				//for (i = 0; i < totalNodeCount; i++)
+				//{
+					//deltas[i] = 1.0;
+				//}
+				
+				for (i = 0; i < totalNodeCount; i++)
+				{	
+					if  (sol[i] >= minLeakThreshold)
+					{
+						deltas[periodCount][i] = sol[i];
+					}
+					else
+						deltas[periodCount][i] = 1.0;
+					//printf("\t\tMIP deltas[%d] = %f\n", i, deltas[i]);
+				}
+				
+				if ((objval - previousObjectiveValue) < 0)
+				{
+					for (i = 0; i < totalNodeCount * 2; i++)
+					{
+						MIPSolutions[periodCount][i] = sol[i];
+					}				
+					MIPobjectiveValues[k][periodCount] = objval;
+				}				
+				
+				forgeMIPStartSolution(periodCount, sol);
+				
+				// Free model
+				GRBfreemodel(model);
+				MIPCounter++;
+				
+			}while((objval - previousObjectiveValue) < 0);		
+			
+			LPmodelError[k][periodCount] = calculateError(totalNodeCount, 
+				periodCount, LPSolutions);
+			MIPmodelError[k][periodCount] = calculateError(totalNodeCount, 
+				periodCount, MIPSolutions);
+			
+			periodCount++;
+			printf("\n\n\n\t\t\t Iteration: %d\t Sub-Period: %d\n", k, periodCount);
+		
+		}while(periodCount < numPeriodsPerSimulation);
+		
+		
+		//Insert near optima exploration mheah
+		for (l = 0; l < (numPeriodsPerSimulation); l++)
+			{
+				nearOptimaBinaryLimit = 0;
+				for (i = 0; i < totalNodeCount; i++)
+				{
+					if(MIPSolutions[l][i] != 0);
+					{
+						nearOptimaBinaryLimit++;
+					}
+				}
+				for (m = 0; m < (numPeriodsPerSimulation); m++)	
 				{				
 					
 					populateNearOptimaMatricies(l, m, totalNodeCount, numOfPressureSensors, sensorNodes);
@@ -504,7 +687,7 @@ int main(int argc, char *argv[])
  					error = GRBnewmodel(env, &model, "L1MIP", 0, NULL, NULL, NULL, NULL, 
  						NULL);
  					if (error) goto QUIT;
- 					 	
+ 						
  					// Add variables 
  					for (i = 0; i < (totalNodeCount * 2); i++)
  					{
@@ -579,7 +762,7 @@ int main(int argc, char *argv[])
 						val[i-(totalNodeCount * 2)] = 1.0;
 					}								
 					error = GRBaddconstr(model, totalNodeCount, ind, val, 
-						GRB_LESS_EQUAL, binaryLeakLimit, NULL);
+						GRB_LESS_EQUAL, nearOptimaBinaryLimit, NULL);
 					if (error) goto QUIT;	
         			
 					/*
@@ -626,7 +809,7 @@ int main(int argc, char *argv[])
 					if (error) goto QUIT;
 					
 					nearOptimaObjectiveValues[l][m] = objval;
-					
+					printf("\n\n\n\t\t\t Solution from time: %d\t Evaluated at time: %d\n", l, m);
 					
 					//error = GRBgetdblattrarray(model, GRB_DBL_ATTR_X, 0, 
 						//(totalNodeCount * 3), sol);
@@ -642,14 +825,7 @@ int main(int argc, char *argv[])
 			
 			writeNearOptimaObjectives(k, nearOptimaObjectiveValues);
 			
-			LPmodelError[k][periodCount] = calculateError(totalNodeCount, 
-				periodCount, LPSolutions);
-			MIPmodelError[k][periodCount] = calculateError(totalNodeCount, 
-				periodCount, MIPSolutions);
-			
-			periodCount++;
 		
-		}while(periodCount < numPeriodsPerSimulation);
 		
 		iterationEndTime = clock();
 		timePerIteration = ((double)(iterationEndTime - iterationStartTime))
@@ -832,7 +1008,7 @@ int main(int argc, char *argv[])
 	}
 	free((void *)MIPobjectiveValues);
 	
-	for (i = 0; i < (numOfHours * numPeriodsPerSimulation); i++)
+	for (i = 0; i < (numPeriodsPerSimulation); i++)
 	{
 		free((void *)nearOptimaObjectiveValues[i]);		 
 	}
@@ -919,9 +1095,9 @@ void initializeArrays(int numOfPressureSensors, int currentRun)
 		}
 	}
 	
-	for (i = 0; i < (numOfHours * numPeriodsPerSimulation); i++)
+	for (i = 0; i < (numPeriodsPerSimulation); i++)
 	{
-		for (j = 0; j < (numOfHours * numPeriodsPerSimulation); j++)
+		for (j = 0; j < (numPeriodsPerSimulation); j++)
 		{
 			nearOptimaObjectiveValues[i][j] = 0;
 		}
@@ -1162,29 +1338,12 @@ void populateMatricies(int currentPeriod, int numNodes, int numOfPressureSensors
 			largeA[currentPeriod][i][j] = 0;
 		}
 	}
-	
-	/*
-	for (i = 0; i < totalNodeCount; i++)
-	{
-		for (j = 0; j < totalNodeCount; j++)
-		{
-			largePressureMatrix[i][j] = 0;
-			largeA[i][j] = 0;
-		}
-	}
-	*/
-	//printf("\n\n\tSEG FAULT TEST 9999 num of pressure sensors = %d\n", numOfPressureSensors);
-	
-	//for (i = 0; i < numOfPressureSensors; i++)
- 	//{
- 		//printf("\n sensorNodes[%d] = %d", i, sensorNodes[i]);
- 	//}
-	
+
 	for(i = 1; i <= numNodes; i++)
 	{		
 		oneLeak(i, deltas[currentPeriod][i-1], numOfPressureSensors, i-1, currentPeriod);		
 	}
-	//printf("\n\n\tSEG FAULT TEST 9999\n");
+	
 	
 	//Update A matrix
 	
@@ -1311,11 +1470,10 @@ void populateNearOptimaMatricies(int solutionPeriod, int currentPeriod,
 			for(j = 0; j < numNodes; j++)
 			{
 				largeA[currentPeriod][i][j] += (baseCasePressureMatrix[currentPeriod][k][i] - 
-					largePressureMatrix[k][i][j]) / deltas[currentPeriod][j]; // / delta;			
+					largePressureMatrix[k][i][j]) / deltas[solutionPeriod][j]; // / delta;			
 			}			
 		}
 	}
-	
 	
 	for(i = 0; i < numNodes; i++)
 	{		
@@ -1358,7 +1516,7 @@ void populateNearOptimaMatricies(int solutionPeriod, int currentPeriod,
 			Ahat[currentPeriod][i][j] = -I[i-numNodes][j-numNodes];
 		}
 	}
-	
+
 }
 
 
@@ -2259,16 +2417,16 @@ int writeNearOptimaObjectives(int currentRun, double **objectives)
 		return 1;
 	
 	fprintf(ptr_file, ",");
-	for (i = 0; i < (numPeriodsPerSimulation * numOfHours); i++)
+	for (i = 0; i < (numPeriodsPerSimulation); i++)
 	{
 		fprintf(ptr_file, "Objective at Hour %d,", i);
 	}
 	fprintf(ptr_file, "\n");
 	
-	for (i = 0; i < (numPeriodsPerSimulation * numOfHours); i++)
+	for (i = 0; i < (numPeriodsPerSimulation); i++)
 	{
 		fprintf(ptr_file, "Solution from Hour %d,", i);
-		for (j = 0; j < (numPeriodsPerSimulation * numOfHours); j++)
+		for (j = 0; j < (numPeriodsPerSimulation ); j++)
 		{	
 			fprintf(ptr_file, "%f,", nearOptimaObjectiveValues[i][j]);
 		}
