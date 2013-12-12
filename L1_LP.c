@@ -19,8 +19,8 @@
 //
 int numOfLeaks = 2, iterations = 1;
 double delta = 1, minLeakSize = 1.0, maxLeakSize = 10.0;
-char inputFile[50] = "Net3.inp";
-char reportFile[50] = "Net3.rpt";
+char inputFile[50] = "hanoi-1.inp"; //"Net3.inp";
+char reportFile[50] = "hanoi.rpt"; //"Net3.rpt";
 char directoryString[50] = "L1_LP/";
 //
 //
