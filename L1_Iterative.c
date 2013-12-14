@@ -17,23 +17,24 @@
 //	for number of leaks and number of simulations  
 //
 //
-int numOfLeaks = 2, iterations = 1;
-double delta = 1, minLeakSize = 10.0, maxLeakSize = 100.0,
-	binaryLeakLimit = 2.0;
-char inputFile[50] = "Net3.inp";
-char reportFile[50] = "Net3.rpt";
+int numOfLeaks = 2, iterations = 50;
+double delta = 1, minLeakSize = 1.0, maxLeakSize = 10.0,
+	binaryLeakLimit = 2.0, minLeakThreshold = 0.5;
+char inputFile[50] = "Net3.inp";//"hanoi-1.inp"; //
+char reportFile[50] = "Net3.rpt";//"hanoi.rpt"; //
 char directoryString[50] = "L1_Iterative/";
 //
 //
 
 int totalNodeCount, EPANETsimCounter;
-int *leakNodes;
+int *leakNodes, *MIPStartSolution;
 double totalDemand, averageDelta, averagePreviousDelta, bigM = 9999999999.99,
 	totalTime, timePerIteration;
 double *baseCasePressureMatrix, *observedPressure, *coefficients, *b, *bhat,
 	*realLeakValues, *singleRunErrors, *leakDemands, *leakMagnitudes, 
-	*modelError, *objectiveValues, *deltas, *previousDeltas, *leakGuesses,
-	**largePressureMatrix, **largeA, **Ahat,  **I; 
+	*LPmodelError, *MIPmodelError, *deltas, *previousDeltas, *leakGuesses,
+	**largePressureMatrix, **largeA, **Ahat,  **I, *LPSolutions, *MIPSolutions, *tempSolutions,
+	*LPobjectiveValues, *MIPobjectiveValues; 
 char globalDirName[100];
 clock_t startTime, endTime, iterationStartTime, iterationEndTime;
 
@@ -43,15 +44,18 @@ FILE *ptr_file;
 
 void initializeArrays();
 void populateMatricies(int);
+void populateBMatrix(int);
 void randomizeLeaks(int, int);
 void printLeakInfo(int);
 void analyzeBaseCase(int);
 void oneLeak(int, double, int, int);
 void nLeaks(int, int);
 void findHighestMagnitudes(double *);
+void forgeMIPStartSolution(double []);
 double calculateError(int, double[]);
 int writeSummaryFile(int, int, double, double[]);
 int writeRawResults(int, int, double[]);
+int writeInterimResults(int, int, int, double [], char *);
 int writeLeakFile(int);
 int writeErrorFile();
 int setOutputDirectory();
@@ -89,6 +93,7 @@ int main(int argc, char *argv[])
 	double    objval;
 	
 	leakNodes = (int *) calloc(numOfLeaks, sizeof(int));
+	MIPStartSolution = (int *) calloc(totalNodeCount, sizeof(int));
 	
 	baseCasePressureMatrix = (double *) calloc(totalNodeCount, sizeof(double));
 	observedPressure = (double *) calloc(totalNodeCount, sizeof(double));
@@ -99,8 +104,15 @@ int main(int argc, char *argv[])
 	singleRunErrors = (double *) calloc(totalNodeCount, sizeof(double));
 	leakDemands = (double *) calloc(numOfLeaks, sizeof(double));
 	leakMagnitudes = (double *) calloc(numOfLeaks, sizeof(double));
-	modelError = (double *) calloc(iterations, sizeof(double));
-	objectiveValues = (double *) calloc(iterations, sizeof(double));
+	LPmodelError = (double *) calloc(iterations, sizeof(double));
+	MIPmodelError = (double *) calloc(iterations, sizeof(double));
+	LPobjectiveValues = (double *) calloc(iterations, sizeof(double));
+	MIPobjectiveValues = (double *) calloc(iterations, sizeof(double));
+	
+	LPSolutions = (double *) calloc(totalNodeCount * 2, sizeof(double));
+	MIPSolutions = (double *) calloc(totalNodeCount * 2, sizeof(double));
+	tempSolutions = (double *) calloc(totalNodeCount * 2, sizeof(double));
+	
 	deltas = (double *) calloc(totalNodeCount, sizeof(double));
 	previousDeltas = (double *) calloc(totalNodeCount, sizeof(double));
 	leakGuesses = (double *) calloc(binaryLeakLimit, sizeof(double));
@@ -145,76 +157,132 @@ int main(int argc, char *argv[])
 		initializeArrays();
 		
 		randomizeLeaks(totalNodeCount, numOfLeaks);
+							
+		objval = 9999;
+		counter = 0;
  		
 		analyzeBaseCase(totalNodeCount);
 		
-		nLeaks(numOfLeaks, totalNodeCount);										
+		nLeaks(numOfLeaks, totalNodeCount);
 		
-		populateMatricies(totalNodeCount);		
+		populateBMatrix(totalNodeCount);
 		
-		// Create an empty model 		
- 		error = GRBnewmodel(env, &model, "L1Approx", 0, NULL, NULL, NULL, NULL, 
- 			NULL);
- 		if (error) goto QUIT;
- 		 	
- 		// Add variables 
- 		for (i = 0; i < (totalNodeCount * 2); i++)
- 		{
- 			obj[i] = coefficients[i]; 			
- 			vtype[i] = GRB_CONTINUOUS; 			
- 		}
- 		 				
-		error = GRBaddvars(model, (totalNodeCount * 2), 0, NULL, NULL, NULL, 
-			obj, NULL, NULL, vtype, NULL);
-		if (error) goto QUIT;
+		do{
 		
-		// Integrate new variables		
-		error = GRBupdatemodel(model);
-		if (error) goto QUIT;
-				
-		// First constraint: Ax <= b						
-		for (i = 0; i < (totalNodeCount * 2); i++)
-		{
-			for (j = 0; j < (totalNodeCount * 2); j++)
-			{
-				ind[j] = j;
-				val[j] = Ahat[i][j];			
-			}								
-			error = GRBaddconstr(model, (totalNodeCount * 2), ind, val, 
-				GRB_LESS_EQUAL, bhat[i],NULL);			
+			populateMatricies(totalNodeCount);		
+		
+			// Create an empty model 		
+ 			error = GRBnewmodel(env, &model, "L1Approx", 0, NULL, NULL, NULL, NULL, 
+ 				NULL);
+ 			if (error) goto QUIT;
+ 			 	
+ 			// Add variables 
+ 			for (i = 0; i < (totalNodeCount * 2); i++)
+ 			{
+ 				obj[i] = coefficients[i]; 			
+ 				vtype[i] = GRB_CONTINUOUS; 			
+ 			}
+ 			 				
+			error = GRBaddvars(model, (totalNodeCount * 2), 0, NULL, NULL, NULL, 
+				obj, NULL, NULL, vtype, NULL);
 			if (error) goto QUIT;
-		}
+			
+			// Integrate new variables		
+			error = GRBupdatemodel(model);
+			if (error) goto QUIT;
+			
+			
+			// First constraint: Ax <= b						
+			for (i = 0; i < (totalNodeCount); i++)
+			{		
+				for (j = 0; j < (totalNodeCount); j++)
+				{
+					ind[j] = j;
+					val[j] = Ahat[i][j];			
+				}								
+				ind[totalNodeCount] = j + i;
+				val[totalNodeCount] = Ahat[i][j+i];
+				error = GRBaddconstr(model, (totalNodeCount + 1), ind, val, 
+					GRB_LESS_EQUAL, bhat[i],NULL);			
+				if (error) goto QUIT;
+			}
+			
+			for (i = totalNodeCount; i < (totalNodeCount * 2); i++)
+			{
+				
+					for (j = 0; j < (totalNodeCount); j++)
+					{
+						ind[j] = j;
+						val[j] = Ahat[i][j];			
+					}								
+					ind[totalNodeCount] = j + (i-totalNodeCount);
+					val[totalNodeCount] = Ahat[i][j+(i-totalNodeCount)];
+					error = GRBaddconstr(model, (totalNodeCount + 1), ind, val, 
+						GRB_LESS_EQUAL, bhat[i],NULL);			
+					if (error) goto QUIT;
+			}
+			
+			/*		
+			// First constraint: Ax <= b						
+			for (i = 0; i < (totalNodeCount * 2); i++)
+			{
+				for (j = 0; j < (totalNodeCount * 2); j++)
+				{
+					ind[j] = j;
+					val[j] = Ahat[i][j];			
+				}								
+				error = GRBaddconstr(model, (totalNodeCount * 2), ind, val, 
+					GRB_LESS_EQUAL, bhat[i],NULL);			
+				if (error) goto QUIT;
+			}
+			*/
+			
+			error = GRBoptimize(model);
+			if (error) goto QUIT;
+							
+			previousObjectiveValue = objval;
+			
+			error = GRBgetdblattr(model, GRB_DBL_ATTR_OBJVAL, &objval);
+			if (error) goto QUIT;
+			
+			error = GRBgetdblattrarray(model, GRB_DBL_ATTR_X, 0, 
+					(totalNodeCount * 2), sol);
+				if (error) goto QUIT;
+			
+				
+				
+			if ((objval - previousObjectiveValue) < 0)
+			{								
+				writeInterimResults(k, counter, optimstatus, sol, "LP");
+				
+				for (i = 0; i < totalNodeCount * 2; i++)
+				{
+					LPSolutions[i] = sol[i];
+				}
+				
+				binaryLeakLimit = 0.0;			
+								
+				for (i = 0; i < totalNodeCount; i++)
+				{
+					deltas[i] = 1.0;
+					if (sol[i] >= minLeakThreshold)
+						deltas[i] = sol[i];
+					//printf("\t\tLP deltas[%d] = %f\n", i, deltas[i]);
+					if (sol[i] > minLeakThreshold)
+						binaryLeakLimit++;
+				}
+				
+				LPobjectiveValues[k] = objval;
+				
+			}
+			
+			// Free model 
+			GRBfreemodel(model);
+		}while((objval - previousObjectiveValue) < 0);
 		
-		error = GRBoptimize(model);
-		if (error) goto QUIT;
-		
-		error = GRBgetdblattrarray(model, GRB_DBL_ATTR_X, 0, 
-			(totalNodeCount * 2), sol);
-		if (error) goto QUIT;
-	
-		averageDelta = averagePreviousDelta = 0.0;
-		
-		findHighestMagnitudes(sol);
-		
-		for (i = 0; i < numOfLeaks; i++)
-		{
-			averageDelta += leakGuesses[i];
-		}
-		
-		averageDelta = averageDelta / numOfLeaks;
-		
-		for (i = 0; i < totalNodeCount; i++)
-		{
-			previousDeltas[i] = deltas[i];
-			averagePreviousDelta += previousDeltas[i];			
-			deltas[i] = averageDelta;
-			//printf("\t\t\t This is the new delta: %f \n", deltas[i]);
-		}		
-		averagePreviousDelta = averagePreviousDelta / totalNodeCount;
-
-		
-		// Free model 
-		GRBfreemodel(model);
+		forgeMIPStartSolution(LPSolutions);
+		objval = 999999;
+		counter = 0;
 		
 		do
 		{
@@ -247,7 +315,42 @@ int main(int argc, char *argv[])
 			// Integrate new variables		
 			error = GRBupdatemodel(model);
 			if (error) goto QUIT;
+			
+			// First constraint: Ax <= b						
+				for (i = 0; i < (totalNodeCount); i++)
+				{
+
+						for (j = 0; j < (totalNodeCount); j++)
+						{
+							ind[j] = j;
+							val[j] = Ahat[i][j];			
+						}								
+						ind[totalNodeCount] = j + i;
+						val[totalNodeCount] = Ahat[i][j+i];
+						error = GRBaddconstr(model, (totalNodeCount + 1), ind, val, 
+							GRB_LESS_EQUAL, bhat[i],NULL);			
+						if (error) goto QUIT;
+
+				}
+				
+				for (i = totalNodeCount; i < (totalNodeCount * 2); i++)
+				{
 					
+						for (j = 0; j < (totalNodeCount); j++)
+						{
+							ind[j] = j;
+							val[j] = Ahat[i][j];			
+						}								
+						ind[totalNodeCount] = j + (i-totalNodeCount);
+						val[totalNodeCount] = Ahat[i][j+(i-totalNodeCount)];
+						error = GRBaddconstr(model, (totalNodeCount + 1), ind, val, 
+							GRB_LESS_EQUAL, bhat[i],NULL);			
+						if (error) goto QUIT;					
+				}
+			
+			
+			
+			/*
 			// First constraint: Ax <= b						
 			for (i = 0; i < (totalNodeCount * 2); i++)
 			{
@@ -260,6 +363,7 @@ int main(int argc, char *argv[])
 					GRB_LESS_EQUAL, bhat[i],NULL);			
 				if (error) goto QUIT;
 			}
+			*/
 			
 			//Leak magnitude - (binary * bigM) <= 0
 			for (i = (totalNodeCount * 2); i < (totalNodeCount * 3); i++)
@@ -281,6 +385,13 @@ int main(int argc, char *argv[])
 			error = GRBaddconstr(model, totalNodeCount, ind, val, 
 				GRB_LESS_EQUAL, binaryLeakLimit,NULL);
 			if (error) goto QUIT;	
+			
+			for(i = 0; i < totalNodeCount; i++)
+			{
+				error = GRBsetdblattrelement(model, "Start", 
+					i + (totalNodeCount * 2), MIPStartSolution[i]);
+				if (error) goto QUIT;
+			}
         	
 			error = GRBoptimize(model);
 			if (error) goto QUIT;	
@@ -298,14 +409,34 @@ int main(int argc, char *argv[])
 				(totalNodeCount * 3), sol);
 			if (error) goto QUIT;
 			
-			
-			for (i = totalNodeCount*2; i < totalNodeCount*3; i++)
-			{	
-				printf( "\n\t\t\tsol[%d] = %f", i, sol[i]);
+			for (i = 0; i < totalNodeCount; i++)
+			{				
+				if  (sol[i] >= minLeakThreshold)
+				{
+					deltas[i] = sol[i];
+				}
+				else
+					deltas[i] = 1.0;
+				//printf("\t\tMIP deltas[%d] = %f\n", i, deltas[i]);
 			}
 			
-			findHighestMagnitudes(sol);	
+			if ((objval - previousObjectiveValue) < 0)
+			{
+				writeInterimResults(k, counter, optimstatus, sol, "MIP");
+				for (i = 0; i < totalNodeCount * 2; i++)
+				{
+					MIPSolutions[i] = sol[i];
+				}				
+				MIPobjectiveValues[k] = objval;
+			}
 			
+			//for (i = totalNodeCount*2; i < totalNodeCount*3; i++)
+			//{	
+				//printf( "\n\t\t\tsol[%d] = %f", i, sol[i]);
+			//}
+			
+			//findHighestMagnitudes(sol);	
+			/*
 			averagePreviousDelta = averageDelta;
 			averageDelta = 0;
 			
@@ -322,15 +453,20 @@ int main(int argc, char *argv[])
 				previousDeltas[i] = deltas[i];				
 				deltas[i] = averageDelta;
 			}
+			*/
+			//objectiveValues[k] = objval;
 			
-			objectiveValues[k] = objval;
-			modelError[k] = calculateError(totalNodeCount, sol);
+			
+			forgeMIPStartSolution(sol);
 			
 			// Free model
 			GRBfreemodel(model);
 			
 		}while((objval - previousObjectiveValue) < 0); 		
 		
+		LPmodelError[k] = calculateError(totalNodeCount, LPSolutions);
+		MIPmodelError[k] = calculateError(totalNodeCount, MIPSolutions);
+		/*
 		
 		//Set delta values for polishing step
 		for (i = 0; i < totalNodeCount; i++)
@@ -443,6 +579,7 @@ int main(int argc, char *argv[])
 			GRBfreemodel(model);
 			
 		}while((objval - previousObjectiveValue) < 0);		
+		*/
 		
 		iterationEndTime = clock();
 		timePerIteration = ((double)(iterationEndTime - iterationStartTime)) / CLOCKS_PER_SEC;
@@ -471,6 +608,7 @@ int main(int argc, char *argv[])
 	*/
 	
 	free(leakNodes);	
+	free(MIPStartSolution);
 	free(baseCasePressureMatrix);	
 	free(observedPressure);	
 	free(coefficients);	
@@ -480,8 +618,13 @@ int main(int argc, char *argv[])
 	free(singleRunErrors);	
 	free(leakDemands);	
 	free(leakMagnitudes);	
-	free(modelError);	
-	free(objectiveValues);
+	free(LPmodelError);
+	free(MIPmodelError);	
+	free(LPobjectiveValues);
+	free(MIPobjectiveValues);
+	free(LPSolutions);
+	free(MIPSolutions);
+	free(tempSolutions);
 	free(deltas);
 	free(previousDeltas);	
 	free(leakGuesses);
@@ -620,6 +763,57 @@ void initializeArrays()
 	}
 	
 }
+
+
+void populateBMatrix(int numNodes)
+{
+	int i, j;
+	
+	//printf("local numNodes variable = %d", numNodes);
+	//getchar();
+	i = j = 0;
+	
+	
+	
+	for (i = 0; i < numNodes; i++)
+	{
+		b[i] = 0;
+	}
+	
+	
+	for (i = 0; i < (numNodes * 2); i++)
+	{
+		bhat[i] = 0;
+	}
+	
+	//Update b matrix
+	
+
+	for (j = 0; j < numNodes; j++)
+	{
+		b[j] = (baseCasePressureMatrix[j] - observedPressure[j]);	
+		//printf("b[%d] = %f\n",i,b[i]);
+	}
+	//getchar();
+	
+	//Create b-hat
+	
+	for (i = 0; i < numNodes; i++)
+	{
+		bhat[i] = b[i];
+		bhat[i + numNodes] = -b[i];
+	}
+	
+	//for (i = numNodes; i < (numNodes * 2); i++)
+	//{
+		//bhat[i] = -b[i-numNodes];
+		//printf("\t\t\t\tbhat[%d] = %f", i-numNodes, bhat[i-numNodes]);
+		//printf("\tbhat[%d] = %f\n", i, bhat[i]);
+	//}
+	//getchar();
+}
+
+
 
 //FUNCTION
 //Populate array values for the L1 Approximation
@@ -954,6 +1148,35 @@ void findHighestMagnitudes(double *solutions)
 	}
 }
 
+void forgeMIPStartSolution(double sol[])
+{
+	int i;
+	i = 0;
+	
+	for (i = 0; i < totalNodeCount; i++)
+	{
+		MIPStartSolution[i] = 0;
+	}
+	/*
+	for (i = 0; i < binaryLeakLimit; i++)
+	{
+		for (j = 0; j < totalNodeCount; j++)
+		{
+			if (leakGuesses[i] == sol[j])
+				MIPStartSolution[currentPeriod][i] = 1;
+		}
+	}
+	*/
+	
+	for (i = 0; i < totalNodeCount; i++)
+	{
+		if (sol[i] >= minLeakThreshold)
+			MIPStartSolution[i] = 1;
+	}
+	
+}
+
+
 //FUNCTION
 //Sum model error
 double calculateError(int numNodes, double solution[])
@@ -1015,7 +1238,7 @@ int writeSummaryFile(int k, int optimstatus, double objval, double sol[])
 	
 	fprintf(ptr_file, "Delta:,%2.2f \n",delta);
 	fprintf(ptr_file, "Total Demand: %f \n", totalDemand);
-	fprintf(ptr_file, "Run #, %d, Model Error:, %f \n", (k + 1), modelError[k]);
+	fprintf(ptr_file, "Run #, %d, LP_Model Error:,%f,MIP_Model Error:,%f\n", (k + 1), LPmodelError[k],MIPmodelError[k]);
 	
 	for (i = 0; i < numOfLeaks; i++)
 	{
@@ -1100,6 +1323,52 @@ int writeRawResults(int k, int optimstatus, double sol[])
 	return 0;
 }
 
+int writeInterimResults(int k, int count, int optimstatus, double sol[], char *method)
+{	
+	char sequentialFile[150], buffer[10], bufferDos[10];
+	int i; 
+	
+	i = 0;	
+	
+	//Create summary CSV file for each set of leaks
+	sequentialFile[0] = '\0';
+	strcat(sequentialFile, globalDirName);
+	strcat(sequentialFile, "/");
+	strcat(sequentialFile, method);
+	strcat(sequentialFile, "_Run_");
+	sprintf(buffer,"%d",k);
+	sprintf(bufferDos,"%d",count);
+	strcat(sequentialFile, buffer);
+	strcat(sequentialFile, "_");
+	strcat(sequentialFile, bufferDos);
+	strcat(sequentialFile, ".csv");
+	
+	ptr_file = fopen(sequentialFile, "w");
+	if (!ptr_file)
+		return 1;	
+	
+	if (optimstatus == GRB_OPTIMAL) 
+	{	
+		for(i = 0; i < ((totalNodeCount * 2) - 1); i++)
+		{		  	
+			fprintf(ptr_file, "  sol[%d] =, %f \n", (i+1), sol[i]);
+		}
+		for(i = ((totalNodeCount * 2) - 1); i < (totalNodeCount * 2); i++)
+		{		  	
+			fprintf(ptr_file, "  sol[%d] =, %f", (i+1), sol[i]);
+		}
+	} else if (optimstatus == GRB_INF_OR_UNBD) 
+	{
+		fprintf(ptr_file, "Model is infeasible or unbounded\n");
+	} else 
+	{
+		fprintf(ptr_file, "Optimization was stopped early\n");
+	}
+	
+	fclose(ptr_file);
+	return 0;
+}
+
 
 //FUNCTION
 //Create an output file for each set of iterations
@@ -1119,15 +1388,15 @@ int writeErrorFile()
 	if (!ptr_file)
 		return 1;
 	
-	fprintf(ptr_file, "Objective_Value, Model_Error\n");
+	fprintf(ptr_file, "LP_Objective_Value,MIP_Objective_Value, LP_Model_Error,MIP_Model_Error\n");
 	
 	for (i = 0; i < (iterations - 1); i++)
 	{
-		fprintf(ptr_file, "%f, %f\n", objectiveValues[i], modelError[i]);										
+		fprintf(ptr_file, "%f,%f,%f,%f\n",LPobjectiveValues[i],MIPobjectiveValues[i],LPmodelError[i], MIPmodelError[i]);										
 	}
 	for (i = (iterations - 1); i < iterations; i++)
 	{
-		fprintf(ptr_file, "%f, %f", objectiveValues[i], modelError[i]);										
+		fprintf(ptr_file, "%f,%f,%f,%f",LPobjectiveValues[i],MIPobjectiveValues[i],LPmodelError[i], MIPmodelError[i]);										
 	}
 	
 	fclose(ptr_file);
