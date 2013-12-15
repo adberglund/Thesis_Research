@@ -150,7 +150,38 @@ int main(int argc, char *argv[])
 		// Integrate new variables		
 		error = GRBupdatemodel(model);
 		if (error) goto QUIT;
-				
+		
+		// First constraint: Ax <= b						
+		for (i = 0; i < (totalNodeCount); i++)
+		{		
+			for (j = 0; j < (totalNodeCount); j++)
+			{
+				ind[j] = j;
+				val[j] = Ahat[i][j];			
+			}								
+			ind[totalNodeCount] = j + i;
+			val[totalNodeCount] = Ahat[i][j+i];
+			error = GRBaddconstr(model, (totalNodeCount + 1), ind, val, 
+				GRB_LESS_EQUAL, bhat[i],NULL);			
+			if (error) goto QUIT;
+		}
+		
+		for (i = totalNodeCount; i < (totalNodeCount * 2); i++)
+		{
+			
+				for (j = 0; j < (totalNodeCount); j++)
+				{
+					ind[j] = j;
+					val[j] = Ahat[i][j];			
+				}								
+				ind[totalNodeCount] = j + (i-totalNodeCount);
+				val[totalNodeCount] = Ahat[i][j+(i-totalNodeCount)];
+				error = GRBaddconstr(model, (totalNodeCount + 1), ind, val, 
+					GRB_LESS_EQUAL, bhat[i],NULL);			
+				if (error) goto QUIT;
+		}
+
+		/*
 		// First constraint: Ax <= b						
 		for (i = 0; i < (totalNodeCount * 2); i++)
 		{
@@ -163,7 +194,7 @@ int main(int argc, char *argv[])
 				GRB_LESS_EQUAL, bhat[i],NULL);			
 			if (error) goto QUIT;
 		}
-		
+		*/
 		error = GRBoptimize(model);
 		if (error) goto QUIT;
 		
