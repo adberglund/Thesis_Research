@@ -17,12 +17,13 @@
 //	for number of leaks and number of simulations  
 //
 //
-int numOfLeaks = 2, iterations = 1;
+int numOfLeaks = 2, iterations = 50;
 double delta = 1, minLeakSize = 1.0, maxLeakSize = 10.0,
 	binaryLeakLimit = 2.0, minLeakThreshold = 0.5;
-char inputFile[50] =  "hanoi-1.inp";//"Net3.inp"; //
-char reportFile[50] = "hanoi.rpt";//"Net3.rpt"; // 
-char directoryString[50] = "L1_SteadyState/Hanoi/";
+char inputFile[50] = "Net3.inp";//"hanoi-1.inp"; //
+char reportFile[50] = "Net3.rpt";//"hanoi.rpt"; //
+char directoryString[50] = "L1_Iterative/";
+
 //
 //
 
@@ -169,7 +170,9 @@ int main(int argc, char *argv[])
 		
 		do{
 		
+
 			counter++;
+
 			populateMatricies(totalNodeCount);		
 		
 			// Create an empty model 		
@@ -242,7 +245,6 @@ int main(int argc, char *argv[])
 			if (error) goto QUIT;
 							
 			previousObjectiveValue = objval;
-			printf("prev objy = %f", previousObjectiveValue);			
 			
 			error = GRBgetdblattr(model, GRB_DBL_ATTR_OBJVAL, &objval);
 			if (error) goto QUIT;
